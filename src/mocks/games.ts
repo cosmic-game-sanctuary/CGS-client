@@ -12,7 +12,7 @@ function delay<T>(value: T, ms = LATENCY_MS): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms))
 }
 
-const studios: Record<string, Studio> = {
+export const studios: Record<string, Studio> = {
   tinroof: {
     id: 'st_tinroof',
     name: 'Tin Roof',
@@ -407,6 +407,116 @@ export async function getReviews(gameId: string): Promise<Review[]> {
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)),
     LATENCY_MS + 180,
   )
+}
+
+export function studioById(id: string): Studio | undefined {
+  return Object.values(studios).find((studio) => studio.id === id)
+}
+
+export async function getStudio(id: string): Promise<Studio | undefined> {
+  return delay(studioById(id))
+}
+
+export async function listGamesByStudio(studioId: string): Promise<Game[]> {
+  return delay(
+    games
+      .filter((game) => game.studio.id === studioId)
+      .sort((a, b) => Date.parse(b.publishedAt) - Date.parse(a.publishedAt)),
+  )
+}
+
+/**
+ * Who's actually in a studio, derived from the splits across everything they
+ * published — the roles people took are more honest than a members table, and
+ * it's the same data a real studio page would have.
+ */
+export function studioCredits(
+  studioGames: Game[],
+): Array<{ handle: string; roles: string[]; games: number }> {
+  const people = new Map<string, { roles: Set<string>; games: number }>()
+  for (const game of studioGames) {
+    for (const member of game.splits) {
+      const entry = people.get(member.handle) ?? { roles: new Set(), games: 0 }
+      entry.roles.add(member.role)
+      entry.games += 1
+      people.set(member.handle, entry)
+    }
+  }
+  return [...people.entries()]
+    .map(([handle, entry]) => ({
+      handle,
+      roles: [...entry.roles],
+      games: entry.games,
+    }))
+    .sort((a, b) => b.games - a.games || a.handle.localeCompare(b.handle))
+}
+
+/**
+ * Handles that have appeared on this studio's splits before — the people you
+ * can add to a new game by name, without needing an email.
+ */
+export function studioTeam(studioId: string): string[] {
+  return studioCredits(
+    games.filter((game) => game.studio.id === studioId),
+  ).map((person) => person.handle)
+}
+
+/** A game being written in the publish flow, before it exists. */
+export interface GameDraft {
+  title: string
+  tagline: string
+  description: string
+  tags: string[]
+  priceUsd: number
+  coverSeed: number
+  splits: Game['splits']
+  buildKb: number
+}
+
+function slugify(title: string): string {
+  return (
+    title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'untitled'
+  )
+}
+
+/**
+ * Publishes into the in-memory catalog so the flow ends somewhere real — the
+ * new game appears in the grid and has a working listing page.
+ * TODO(integration): POST /api/games, multipart with build + art + metadata.
+ */
+export async function publishGame(
+  draft: GameDraft,
+  studio: Studio,
+): Promise<Game> {
+  const base = slugify(draft.title)
+  let slug = base
+  let n = 2
+  while (games.some((game) => game.slug === slug)) slug = `${base}-${n++}`
+
+  const game: Game = {
+    id: `gm_${slug.replace(/-/g, '')}`,
+    slug,
+    title: draft.title,
+    tagline: draft.tagline,
+    description: draft.description,
+    studio,
+    priceUsd: draft.priceUsd,
+    tags: draft.tags,
+    sticker: 'new',
+    coverSeed: draft.coverSeed,
+    publishedAt: new Date().toISOString(),
+    splits: draft.splits,
+    rating: 0,
+    reviewCount: 0,
+    plays: 0,
+    buildKb: draft.buildKb,
+  }
+
+  games.unshift(game)
+  return delay(game, 900)
 }
 
 /** Every tag in the catalog, most common first. */

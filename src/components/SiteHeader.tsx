@@ -43,6 +43,14 @@ export function SiteHeader({
         )}
 
         <nav className="flex shrink-0 items-center gap-3">
+          {session.studioId ? (
+            <Link
+              to={`/studio/${session.studioId}`}
+              className="font-wonk text-sm text-ink no-underline hover:underline"
+            >
+              Your studio
+            </Link>
+          ) : null}
           <Link
             to="/publish"
             className="font-wonk text-sm text-ink no-underline hover:underline"

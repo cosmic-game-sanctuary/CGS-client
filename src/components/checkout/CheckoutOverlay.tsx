@@ -187,7 +187,7 @@ export function CheckoutOverlay({
               <>
                 <h2 className="text-2xl">Sign in to buy</h2>
                 <p className="mt-2 font-body text-sm leading-relaxed text-ink-soft">
-                  Email only. We make the wallet for you — there&rsquo;s no
+                  Email only. We make the wallet for you, so there&rsquo;s no
                   extension to install and no phrase to write down.
                 </p>
                 <label

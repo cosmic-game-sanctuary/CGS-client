@@ -41,9 +41,9 @@ Not a web3 game. Not GameFi. Not an adult-content site. Say it early — ~90% of
 | Game listing | ✅ done | Cover, description, price, public splits, verified-purchase reviews, report. |
 | Checkout | ✅ done | Overlay, not a route. Sign in → fund → pay → mint → boot. All mocked. |
 | In-browser player | ✅ done | `GameStage` on the night surface + a `/play/:slug` permalink. Real build not mounted yet. |
-| Dev upload | ⬜ next | Drag a zip → **see it playing in the page before publishing** → price → teammates by email → splits totalling 100% → publish. |
-| Studio profile | ⬜ todo | Games, ENS name if claimed. |
-| Agent setup | ⬜ todo | Pick a game, set a trigger price, fund the agent's wallet. Show balance and status. |
+| Dev upload | ✅ done | Four steps: build → details → splits → publish. Preview gates the flow. Publishing pushes into the in-memory catalog, so the new game really appears. |
+| Studio profile | ✅ done | Games, ENS name, stats, and credits derived from splits. |
+| Agent setup | ⬜ next | Pick a game, set a trigger price, fund the agent's wallet. Show balance and status. Judges are told to look for this one. |
 | Swipe discovery | ⬜ maybe | "Surprise me". Genuinely differentiating, pure frontend. Not on the critical demo path. |
 
 Smaller pieces still open, roughly in priority order:
@@ -82,6 +82,12 @@ The one-line version — **Paper Arcade**: ink on warm paper, hard offset shadow
 Locked as of 5 Sep 2026: name, palette, type (**Fraunces / Public Sans / Martian Mono**), physics, the seven named motions, tone B for the app and C for the landing page, and the banlist. Don't re-open these without a real reason.
 
 The banlist in [DESIGN.md §9](DESIGN.md) is the part most likely to be violated by generated code. Check against it before saying a screen is done.
+
+### Copy rules that keep getting broken
+
+- **No em dashes in any user-visible string.** Not in headings, body, hints, labels, placeholders, empty states, or aria-labels. Use a full stop and a second sentence, or a comma. An em dash is almost always a sentence doing two jobs; split it. Code comments are exempt.
+- **Don't over-explain.** Say a thing once. The reader is not stupid, and a paragraph justifying a feature reads as insecurity. "Locked at publish. Every sale divides automatically." is finished; the three-clause version explaining who cannot change it and why is not better.
+- **Don't argue the pitch on the shopfront.** Censorship, card networks and why-we're-different belong behind "Why we built this" on the landing page, not sprinkled through the catalog and listings. Everywhere else this is an ordinary games store.
 
 ---
 
@@ -147,19 +153,22 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Buyer path complete on mock data
+**Stage:** Buyer and dev paths both complete on mock data
 **Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, `@iconify-json/streamline-freehand` (dev)
-**Screens built:** catalog (`/`), game listing (`/game/:slug`), checkout overlay, player (`/play/:slug`)
+**Screens built:** catalog (`/`), listing (`/game/:slug`), checkout overlay, player (`/play/:slug`), publish (`/publish`), studio (`/studio/:id`)
 **Deployed:** no
 
-**Working end to end:** browse → filter/sort/search → open a listing → **buy → sign in → fund → pay → key mints → the game boots in the same tab**. Come back out and the listing shows the owned state, the header shows your balance, and `/play/:slug` works as a permalink. All from `src/mocks/`. `npm run lint` and `npm run build` are both clean.
+**Working end to end, both directions:**
+- **Buy:** browse → filter/sort/search → listing → buy → sign in → fund → pay → key mints → the game boots in the same tab. The listing then shows the owned state and the header shows your balance.
+- **Publish:** drop a zip → see it running → details, cover, price → splits by email totalling 100% → publish. **The game is then actually in the catalog** with a working listing and studio page.
+
+All from `src/mocks/`. `npm run lint` and `npm run build` are both clean.
 
 **Next up:**
-1. **Dev upload + splits editor** — drag zip → see it running before publish → price → teammates by email → publish. Priority 2 in the brief.
-2. Studio profile, then the agent setup screen.
-3. The smaller open pieces listed in §1.
-4. Install Impeccable and run `/impeccable audit` per screen.
-5. Later, as a deliberate phase: Privy, then the API, then the x402 download path.
+1. **Agent setup screen** — judges are specifically told to look for the autonomous-purchase story, so it must be legible, not buried.
+2. The smaller open pieces listed in §1 (write-a-review, library, the USP modal, report).
+3. Install Impeccable and run `/impeccable audit` per screen.
+4. Later, as a deliberate phase: Privy, then the API, then the x402 download path.
 
 ### Layout of the repo
 
@@ -171,8 +180,9 @@ src/mocks/                types.ts mirrors the API contract; games.ts is the fak
                           useSyncExternalStore store — sign-in, balance, keys)
 src/lib/                  cn(), and format.ts for every ledger value
 src/components/           CoverArt, GameCard, SplitBar, HeroCollage, GameStage,
-                          Logo, ScrollManager, SiteHeader/Footer, checkout/, icons/, ui/
-src/routes/               Catalog, GameListing, Player
+                          Logo, ScrollManager, SiteHeader/Footer,
+                          checkout/, publish/, icons/, ui/
+src/routes/               Catalog, GameListing, Player, Publish, Studio
 ```
 
 Integration seams are marked `TODO(integration)` — grep for it. They are: Privy login, Privy funding, the x402 payment call, and the real game build in `GameStage`.
@@ -204,6 +214,21 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 ### Log
 
 _Newest first._
+
+#### 2026-09-05 (split dial + copy pass) — Suparno
+- **Did:** Publish now scrolls to the top on step change (steps are state, not routes, so `ScrollManager` never saw them). Added `SplitDial` to the splits editor: draggable dividers with keyboard support, number inputs kept for precision. Stripped every em dash from user-visible copy and wrote the rule into §2 here and DESIGN.md §10. Removed the Streamline credit from the footer.
+- **⚠ Open:** the Freehand icons are **CC BY 4.0 and the required attribution is now nowhere in the app**. `TODO(attribution)` in `SiteFooter.tsx`, DESIGN.md §13. It needs a home before this ships publicly — an about page, a colophon, or a credits line all work.
+
+#### 2026-09-05 (studio identity) — Suparno
+- **Did:** Moved the dev identity into the session store (`studioId` + `handle`) instead of hardcoding it in `Publish.tsx`. Header now has a **Your studio** link; the studio page marks itself as yours and swaps its copy and CTA accordingly; the publish success screen links there too.
+- **Note:** `studioId` is mocked as always present. A real signed-in buyer with no studio should be routed through studio creation before `/publish` — marked `TODO(integration)`, currently it falls back to Tin Roof so the flow stays testable.
+
+#### 2026-09-05 (publish + studio) — Suparno
+- **Did:** `/publish` — a four-step flow (build → details → splits → publish) with a real dropzone, a build preview that gates the rest of the flow, a generated cover with a shuffle, price/free toggle, and the splits editor. `/studio/:id` — games, ENS name, stats, and credits.
+- **Works now:** Publishing pushes into the in-memory catalog via `publishGame()`, so a game you make appears in the grid with a working listing and studio page. Good for testing the other screens with your own data; it resets on reload.
+- **Decisions:** people you've already shipped with are added **by name** from the studio roster (one click); only someone genuinely new needs an **email**, and they claim a wallet on accept. Requiring wallets up front would kill the jam-team case, which is the whole reason the feature exists. Studio credits are derived from the splits across their published games rather than a members table; it's more honest and it's data the listing already shows publicly.
+- **Known gap:** the build preview shows the generated cover, not the actual dropped zip — we don't unpack anything client-side. Marked `TODO(integration)` in `Publish.tsx`; it becomes an iframe over the unpacked build.
+- **Next:** Agent setup screen.
 
 #### 2026-09-05 (checkout) — Suparno
 - **Did:** Built the critical path. `src/mocks/session.ts` replaces the old `mockSession` object with a real reactive store (sign-in, wallet balance, held keys). `CheckoutOverlay` runs sign in → fund → confirm → pay, then the lights-down wipe. `GameStage` is the night play surface; `/play/:slug` is the owned-game permalink. Header now shows email + balance when signed in.

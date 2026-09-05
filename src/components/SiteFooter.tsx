@@ -1,8 +1,10 @@
 import { Logo } from '@/components/Logo'
 
 /**
- * Streamline attribution is required by CC BY 4.0 and must stay here —
- * DESIGN.md §13. It is the entire licence cost of the icon set.
+ * TODO(attribution): the Streamline Freehand icons are CC BY 4.0, so a visible
+ * credit linking to streamlinehq.com is required somewhere in the app before
+ * this ships publicly. Removed from the footer on request, to be placed
+ * elsewhere. See DESIGN.md §13.
  */
 export function SiteFooter() {
   return (
@@ -12,12 +14,6 @@ export function SiteFooter() {
 
         <p className="font-mono text-[11px] leading-relaxed text-ink-soft">
           All sales final. Splits lock at publish.
-          <br />
-          Icons by{' '}
-          <a href="https://streamlinehq.com" className="text-ink">
-            Streamline
-          </a>{' '}
-          — Freehand, CC BY 4.0.
         </p>
       </div>
     </footer>

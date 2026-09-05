@@ -274,7 +274,13 @@ Most of this UI will be written by an AI, and an AI drifts toward the mean unles
 
 ## 10. Voice
 
-Write from the user's side of the screen. Active voice. A control says exactly what happens — **"Publish"**, then a toast that says **"Published."**
+Write from the user's side of the screen. Active voice. A control says exactly what happens: **"Publish"**, then a toast that says **"Published."**
+
+**No em dashes in any user-visible string.** Headings, body, hints, labels, placeholders, empty states, aria-labels. Use a full stop and a second sentence, or a comma. An em dash is nearly always one sentence doing two jobs. Code comments and these docs are exempt.
+
+**Say it once.** A paragraph justifying a feature reads as insecurity, and it assumes the reader needs convincing. "Locked at publish. Every sale divides automatically." is finished. The longer version naming who cannot change it and why is not better.
+
+**Keep the pitch off the shopfront.** Censorship, card networks and why-we're-different live behind "Why we built this" on the landing page. Everywhere else this is an ordinary games store that happens to settle on-chain.
 
 - Name things by what people recognise: *"Your games"*, not *"Owned GameKey tokens"*.
 - Errors say what went wrong and how to fix it. No apologies, no vagueness.
@@ -400,11 +406,13 @@ Write from the user's side of the screen. Active voice. A control says exactly w
 
 ---
 
-## 13. Attribution (required)
+## 13. Attribution (required, currently missing)
 
-Footer and README:
+The Freehand icon set is CC BY 4.0, which requires a visible credit with a link to streamlinehq.com. **It was removed from the footer on 5 Sep 2026 and has not been placed anywhere else yet** — `TODO(attribution)` in `SiteFooter.tsx`. It needs a home before this ships publicly. An about page, a colophon, or a credits line on the landing page all work.
 
-> Icons by [Streamline](https://streamlinehq.com) — Freehand set, CC BY 4.0.
+Wording:
+
+> Icons by [Streamline](https://streamlinehq.com), Freehand set, CC BY 4.0.
 
 ---
 

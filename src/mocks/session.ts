@@ -18,6 +18,13 @@ export interface SessionState {
   balanceUsd: number
   /** Games this wallet holds a GameKey for. */
   ownedGameIds: string[]
+  /**
+   * The studio you publish as, or null if you haven't made one.
+   * TODO(integration): POST /api/studios, then membership from the API.
+   */
+  studioId: string | null
+  /** Your handle inside that studio — what appears on splits and credits. */
+  handle: string | null
 }
 
 let state: SessionState = {
@@ -25,6 +32,10 @@ let state: SessionState = {
   email: null,
   balanceUsd: 0,
   ownedGameIds: [],
+  // Mocked as an existing studio member so the dev-side screens have somewhere
+  // to point. Browsing and buying never depend on this.
+  studioId: 'st_tinroof',
+  handle: 'miracode',
 }
 
 const listeners = new Set<() => void>()

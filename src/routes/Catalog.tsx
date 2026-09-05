@@ -60,7 +60,7 @@ export function Catalog() {
             </h1>
             <p className="mt-5 max-w-[46ch] font-body text-[17px] leading-relaxed text-ink">
               Buy an indie game here and everyone who made it gets their share
-              the same minute — split the way they agreed, before the first
+              the same minute, split the way they agreed before the first
               sale.
             </p>
             <div className="mt-7 flex flex-wrap items-center gap-3">
