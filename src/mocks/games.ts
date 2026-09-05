@@ -400,6 +400,48 @@ export async function getGame(slug: string): Promise<Game | undefined> {
   return delay(games.find((game) => game.slug === slug))
 }
 
+let reviewSeq = 0
+
+/** TODO(integration): POST /api/games/:id/reviews, ownership-gated server side. */
+export async function addReview(input: {
+  gameId: string
+  author: string
+  authorIsEns: boolean
+  rating: number
+  body: string
+}): Promise<Review> {
+  reviewSeq += 1
+  const review: Review = {
+    id: `rv_new_${reviewSeq}`,
+    gameId: input.gameId,
+    author: input.author,
+    authorIsEns: input.authorIsEns,
+    rating: input.rating,
+    body: input.body,
+    createdAt: new Date().toISOString(),
+  }
+  reviews.unshift(review)
+
+  const game = games.find((candidate) => candidate.id === input.gameId)
+  if (game) {
+    const total = game.rating * game.reviewCount + input.rating
+    game.reviewCount += 1
+    game.rating = Math.round((total / game.reviewCount) * 10) / 10
+  }
+
+  return delay(review, 500)
+}
+
+/** TODO(integration): POST /api/reports. Reports pull a game immediately. */
+export async function submitReport(input: {
+  gameId: string
+  reason: string
+  detail: string
+}): Promise<{ ok: true }> {
+  console.info('[mock] report filed', input)
+  return delay({ ok: true } as const, 600)
+}
+
 export async function getReviews(gameId: string): Promise<Review[]> {
   return delay(
     reviews
@@ -471,6 +513,7 @@ export interface GameDraft {
   coverSeed: number
   splits: Game['splits']
   buildKb: number
+  localBuildEntry?: string
 }
 
 function slugify(title: string): string {
@@ -513,6 +556,7 @@ export async function publishGame(
     reviewCount: 0,
     plays: 0,
     buildKb: draft.buildKb,
+    localBuildEntry: draft.localBuildEntry,
   }
 
   games.unshift(game)

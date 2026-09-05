@@ -160,6 +160,37 @@
     outline-offset: 3px;
   }
 
+  /* Scrollbars, in the language. A default grey gutter is the one piece of
+     browser chrome that shows up inside our own panels, so it gets the same
+     treatment as everything else: an ink object on the page, no track. */
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-faint) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 12px;
+    height: 12px;
+  }
+
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: var(--color-ink-faint);
+    /* Transparent border plus content-box clip insets the thumb, so it reads
+       as a pill floating on the surface rather than a bar welded to the edge. */
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: var(--radius-chip);
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-ink-soft);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -245,13 +276,39 @@
   }
 
   /* Lights down — the store→play wipe. DESIGN.md §5.
-     A clip-path pair rather than opacity, so the night ground arrives as an
-     edge sweeping down the page instead of a cross-fade. */
+     A clip-path edge sweeping down the page, never a cross-fade.
+
+     An animation rather than a transition, because the overlay for an owned
+     game mounts already open and a transition would have nothing to run from.
+     Adding the class fires the animation either way. */
   .wipe-up {
     clip-path: inset(0 0 100% 0);
   }
   .wipe-down {
-    clip-path: inset(0 0 0 0);
+    animation: wipe-down 0.6s cubic-bezier(0.7, 0, 0.2, 1) both;
+  }
+
+  /* Leaving runs the shutter back up the way it came, rather than cutting. */
+  .wipe-out {
+    animation: wipe-out 0.6s cubic-bezier(0.7, 0, 0.2, 1) both;
+  }
+
+  @keyframes wipe-down {
+    from {
+      clip-path: inset(0 0 100% 0);
+    }
+    to {
+      clip-path: inset(0 0 0 0);
+    }
+  }
+
+  @keyframes wipe-out {
+    from {
+      clip-path: inset(0 0 0 0);
+    }
+    to {
+      clip-path: inset(0 0 100% 0);
+    }
   }
 
   /* Hatched placeholder — replaces skeleton shimmer. §8 */

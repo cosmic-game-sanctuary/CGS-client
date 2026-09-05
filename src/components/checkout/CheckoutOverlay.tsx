@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { GameStage } from '@/components/GameStage'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { PURCHASE_BEATS } from '@/components/play/beats'
+import { LightsDown } from '@/components/play/LightsDown'
 import { Freehand } from '@/components/icons/Freehand'
 import { Button } from '@/components/ui/Button'
 import { PriceChip } from '@/components/ui/PriceChip'
@@ -23,21 +24,7 @@ import type { Game } from '@/mocks/types'
  * The seams are marked TODO(integration).
  */
 
-type Phase =
-  | 'signin'
-  | 'funding'
-  | 'confirm'
-  | 'paying'
-  | 'minting'
-  | 'booting'
-  | 'playing'
-
-const BEATS: Record<'paying' | 'minting' | 'booting' | 'playing', string> = {
-  paying: 'Paying',
-  minting: 'Minting GameKey',
-  booting: 'Booting build from IPFS',
-  playing: 'Playing',
-}
+type Phase = 'signin' | 'funding' | 'confirm' | 'paying'
 
 /** Top-up options, so nobody has to type an amount. */
 function suggestedTopUp(shortfall: number) {
@@ -64,13 +51,13 @@ export function CheckoutOverlay({
   const timers = useRef<number[]>([])
   const panelRef = useRef<HTMLDivElement>(null)
 
-  const isPlaying = phase === 'playing'
-  const lightsDown =
-    phase === 'paying' ||
-    phase === 'minting' ||
-    phase === 'booting' ||
-    isPlaying
+  const lightsDown = phase === 'paying'
   const dismissable = !lightsDown
+
+  const beats = useMemo(
+    () => PURCHASE_BEATS(() => grantKey(game.id, game.priceUsd)),
+    [game.id, game.priceUsd],
+  )
 
   // Clear any in-flight beat timers if the overlay goes away mid-sequence.
   useEffect(() => {
@@ -131,12 +118,6 @@ export function CheckoutOverlay({
     // TODO(integration): this is the x402 path — request the download, get a
     // 402 with payment requirements, sign, retry. Kai supplies the helper.
     setPhase('paying')
-    after(750, () => setPhase('minting'))
-    after(1400, () => {
-      grantKey(game.id, game.priceUsd)
-      setPhase('booting')
-    })
-    after(2100, () => setPhase('playing'))
   }
 
   const shortfall = Math.max(0, game.priceUsd - session.balanceUsd)
@@ -158,6 +139,9 @@ export function CheckoutOverlay({
         className={cn(
           'absolute inset-0 h-full w-full border-0 bg-ink/45',
           dismissable ? 'cursor-pointer' : 'cursor-default',
+          // Hidden once the night layer covers it, so the wipe back up reveals
+          // the page rather than a scrim.
+          lightsDown && 'invisible',
         )}
       />
 
@@ -295,49 +279,14 @@ export function CheckoutOverlay({
         </div>
       </div>
 
-      {/* Lights down: one clip-path wipe over the whole viewport. §5 */}
-      <div
-        aria-hidden={!lightsDown}
-        className={cn(
-          'absolute inset-0 bg-night transition-[clip-path] duration-600 ease-[cubic-bezier(.7,0,.2,1)]',
-          lightsDown ? 'wipe-down' : 'wipe-up pointer-events-none',
-        )}
-      >
-        {isPlaying ? (
-          <GameStage game={game} onExit={onClose} />
-        ) : (
-          <BootSequence phase={phase} />
-        )}
-      </div>
+      {/* Lights down: the shared store-to-play wipe. §5 */}
+      <LightsDown
+        game={game}
+        beats={beats}
+        active={lightsDown}
+        onExit={onClose}
+      />
     </div>
   )
 }
 
-const STEPS = ['paying', 'minting', 'booting'] as const
-
-/** The beats that play behind the wipe while settlement happens. */
-function BootSequence({ phase }: { phase: Phase }) {
-  const label = BEATS[phase as keyof typeof BEATS] ?? ''
-  const reached = STEPS.indexOf(phase as (typeof STEPS)[number])
-
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-5 text-paper">
-      <p aria-live="polite" className="label-micro min-h-4 text-paper/70">
-        {label ? `${label}…` : ''}
-      </p>
-
-      {/* Three steps, filling as each completes. Progress, not a spinner. */}
-      <div className="flex gap-2" aria-hidden>
-        {STEPS.map((step, i) => (
-          <span
-            key={step}
-            className={cn(
-              'h-2 w-12 rounded-chip border-2 border-paper transition-colors duration-300',
-              reached === -1 || reached > i ? 'bg-green' : 'bg-transparent',
-            )}
-          />
-        ))}
-      </div>
-    </div>
-  )
-}

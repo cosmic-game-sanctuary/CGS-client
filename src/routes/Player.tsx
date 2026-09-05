@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { GameStage } from '@/components/GameStage'
+import { PLAY_BEATS } from '@/components/play/beats'
+import { LightsDown } from '@/components/play/LightsDown'
 import { ButtonLink } from '@/components/ui/Button'
 import { getGame } from '@/mocks/games'
 import { useSession } from '@/mocks/session'
@@ -50,9 +51,15 @@ export function Player() {
     )
   }
 
+  // Already dark, so the wipe is invisible here. The beats still run, so a
+  // permalink boots the same way a click from the store does.
   return (
-    <div className="h-screen">
-      <GameStage game={game} onExit={() => navigate(`/game/${game.slug}`)} />
+    <div className="relative h-screen bg-night">
+      <LightsDown
+        game={game}
+        beats={PLAY_BEATS}
+        onExit={() => navigate(`/game/${game.slug}`)}
+      />
     </div>
   )
 }

@@ -1,14 +1,13 @@
 import { Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
-import { Button } from '@/components/ui/Button'
-import { formatPrice } from '@/lib/format'
+import { ProfileMenu } from '@/components/ProfileMenu'
 import { cn } from '@/lib/utils'
-import { useSession } from '@/mocks/session'
 
 /**
- * Browsing never asks for auth — CLAUDE.md §1. The control says "Sign in", not
- * "Connect wallet", and it is not the loudest thing on the page: DESIGN.md §9.
+ * Browsing never asks for auth (CLAUDE.md §1), so the only thing on the right
+ * is you, and everything about you sits behind it. See ProfileMenu for why the
+ * links live in a menu rather than spread across the bar.
  */
 export function SiteHeader({
   search,
@@ -17,7 +16,6 @@ export function SiteHeader({
   search?: string
   onSearchChange?: (value: string) => void
 }) {
-  const session = useSession()
   const showSearch = typeof onSearchChange === 'function'
 
   return (
@@ -28,7 +26,7 @@ export function SiteHeader({
         </Link>
 
         {showSearch ? (
-          <div className="order-3 flex min-w-[200px] flex-1 items-center gap-2 rounded-card border-2 border-ink bg-paper px-3 py-2 focus-within:shadow-hard-sm md:order-none">
+          <div className="order-3 flex min-w-50 flex-1 items-center gap-2 rounded-card border-2 border-ink bg-paper px-3 py-2 focus-within:shadow-hard-sm md:order-none">
             <Search size={17} strokeWidth={2.5} className="shrink-0 text-ink-soft" />
             <input
               value={search ?? ''}
@@ -42,42 +40,9 @@ export function SiteHeader({
           <div className="flex-1" />
         )}
 
-        <nav className="flex shrink-0 items-center gap-3">
-          {session.studioId ? (
-            <Link
-              to={`/studio/${session.studioId}`}
-              className="font-wonk text-sm text-ink no-underline hover:underline"
-            >
-              Your studio
-            </Link>
-          ) : null}
-          <Link
-            to="/publish"
-            className="font-wonk text-sm text-ink no-underline hover:underline"
-          >
-            Publish a game
-          </Link>
-
-          {session.signedIn ? (
-            <span className="flex items-center gap-2.5 rounded-chip border-2 border-ink bg-paper px-3 py-1.5">
-              <span
-                className="max-w-[13ch] truncate font-mono text-[11px] text-ink-soft"
-                title={session.email ?? undefined}
-              >
-                {session.email}
-              </span>
-              <span className="font-mono tnum text-[11px] font-bold text-green">
-                {formatPrice(session.balanceUsd)}
-              </span>
-            </span>
-          ) : (
-            // TODO(integration): Privy login. Buying signs you in on the way
-            // through, so this is a convenience, never a gate on browsing.
-            <Button size="sm" variant="neutral">
-              Sign in
-            </Button>
-          )}
-        </nav>
+        <div className="flex shrink-0 items-center">
+          <ProfileMenu />
+        </div>
       </div>
     </header>
   )

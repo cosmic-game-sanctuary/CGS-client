@@ -1,6 +1,8 @@
 import { Check, Shuffle } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { BuildFrame } from '@/components/BuildFrame'
+import { BuildDiagnostics } from '@/components/publish/BuildStatus'
 import { CoverArt } from '@/components/CoverArt'
 import { Dropzone, type UploadedBuild } from '@/components/publish/Dropzone'
 import {
@@ -12,6 +14,13 @@ import { SiteHeader } from '@/components/SiteHeader'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { PriceChip } from '@/components/ui/PriceChip'
 import { Sticker } from '@/components/ui/Sticker'
+import {
+  BuildError,
+  mountBuild,
+  unmountBuild,
+  type MountedBuild,
+  type MountStage,
+} from '@/lib/buildPreview'
 import { cn } from '@/lib/utils'
 import { publishGame, studioById, studios, studioTeam } from '@/mocks/games'
 import { useSession } from '@/mocks/session'
@@ -43,7 +52,11 @@ export function Publish() {
   const myHandle = session.handle ?? 'you'
 
   const [build, setBuild] = useState<UploadedBuild | null>(null)
+  const [mounted, setMounted] = useState<MountedBuild | null>(null)
   const [unpacking, setUnpacking] = useState(false)
+  const [buildError, setBuildError] = useState<string | null>(null)
+  const [stage, setStage] = useState<MountStage | null>(null)
+  const [frameLoaded, setFrameLoaded] = useState(false)
 
   const [title, setTitle] = useState('')
   const [tagline, setTagline] = useState('')
@@ -66,7 +79,6 @@ export function Publish() {
 
   const [publishing, setPublishing] = useState(false)
   const [published, setPublished] = useState<Game | null>(null)
-  const timers = useRef<number[]>([])
 
   // Steps change state, not the route, so ScrollManager never sees them —
   // without this you land halfway down the next step.
@@ -86,14 +98,37 @@ export function Publish() {
   const canLeaveDetails = title.trim() !== '' && tagline.trim() !== ''
   const canLeaveSplits = splitTotal === 100
 
-  function handleBuild(file: UploadedBuild) {
+  // Unpacks the zip in the browser and mounts it so it actually runs below.
+  function handleBuild(file: File) {
     setUnpacking(true)
-    timers.current.push(
-      window.setTimeout(() => {
-        setBuild(file)
+    setBuildError(null)
+    setFrameLoaded(false)
+    mountBuild(file, setStage)
+      .then((result) => {
+        setMounted(result)
+        setBuild({ name: file.name, sizeKb: Math.round(file.size / 1024) })
+        if (!title.trim()) {
+          setTitle(guessTitle(file.name))
+        }
+      })
+      .catch((error: unknown) => {
+        setBuildError(
+          error instanceof BuildError
+            ? error.message
+            : 'That build would not open. Is it a zip with an index.html inside?',
+        )
+      })
+      .finally(() => {
         setUnpacking(false)
-      }, 900),
-    )
+        setStage(null)
+      })
+  }
+
+  function replaceBuild() {
+    if (mounted) void unmountBuild(mounted.id)
+    setMounted(null)
+    setBuild(null)
+    setFrameLoaded(false)
   }
 
   function handlePublish() {
@@ -112,6 +147,7 @@ export function Publish() {
           pct: member.pct,
         })),
         buildKb: build?.sizeKb || 3200,
+        localBuildEntry: mounted?.entry,
       },
       myStudio,
     ).then((game) => {
@@ -156,11 +192,20 @@ export function Publish() {
               {build ? (
                 <BuildPreview
                   build={build}
+                  mounted={mounted}
+                  title={title || 'Your build'}
                   coverSeed={coverSeed}
-                  onReplace={() => setBuild(null)}
+                  loaded={frameLoaded}
+                  onFrameLoad={() => setFrameLoaded(true)}
+                  onReplace={replaceBuild}
                 />
               ) : (
-                <Dropzone onBuild={handleBuild} busy={unpacking} />
+                <Dropzone
+                  onBuild={handleBuild}
+                  busy={unpacking}
+                  stage={stage}
+                  error={buildError}
+                />
               )}
             </section>
           ) : step === 1 ? (
@@ -408,11 +453,19 @@ function Stepper({
  */
 function BuildPreview({
   build,
+  mounted,
+  title,
   coverSeed,
+  loaded,
+  onFrameLoad,
   onReplace,
 }: {
   build: UploadedBuild
+  mounted: MountedBuild | null
+  title: string
   coverSeed: number
+  loaded: boolean
+  onFrameLoad: () => void
   onReplace: () => void
 }) {
   return (
@@ -433,21 +486,42 @@ function BuildPreview({
             {build.name}
           </span>
           <span className="label-micro shrink-0 text-paper/70">
+            {mounted ? `${mounted.fileCount} files · ` : ''}
             {(build.sizeKb / 1024).toFixed(1)} MB
           </span>
         </div>
-        <div className="p-5 sm:p-8">
-          <div className="mx-auto max-w-140 overflow-hidden rounded-card border-[3px] border-paper">
-            <CoverArt seed={coverSeed} className="aspect-16/10" />
+        <div className="p-4 sm:p-6">
+          <div className="mx-auto aspect-16/10 max-w-140 overflow-hidden rounded-card border-[3px] border-paper">
+            {mounted ? (
+              <BuildFrame
+                src={mounted.entry}
+                title={`${title} preview`}
+                onLoad={onFrameLoad}
+              />
+            ) : (
+              <CoverArt seed={coverSeed} className="h-full" />
+            )}
           </div>
         </div>
       </div>
 
+      {mounted ? <BuildDiagnostics build={mounted} loaded={loaded} /> : null}
+
       <p className="font-mono text-[11px] text-ink-soft">
-        Checked for malware and hashed before anything goes live.
+        Running from your own machine. Nothing is uploaded until you publish.
       </p>
     </div>
   )
+}
+
+/** `deep-six.zip` becomes `Deep Six`, as a starting point they can overwrite. */
+function guessTitle(filename: string): string {
+  return filename
+    .replace(/\.zip$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
 function Summary({

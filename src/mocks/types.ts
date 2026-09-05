@@ -49,6 +49,12 @@ export interface Game {
   plays: number
   /** Rough build size, shown so the "no install" claim is concrete. */
   buildKb: number
+  /**
+   * Entry URL of a build mounted in this browser session, when the game was
+   * published here. Mock-only: the real build comes from the IPFS CID through
+   * the x402 download.
+   */
+  localBuildEntry?: string
 }
 
 export interface Review {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { GameCard, GameCardSkeleton } from '@/components/GameCard'
 import { HeroCollage } from '@/components/HeroCollage'
+import { WhyModal } from '@/components/WhyModal'
 import { Freehand } from '@/components/icons/Freehand'
 import { SiteFooter } from '@/components/SiteFooter'
 import { SiteHeader } from '@/components/SiteHeader'
@@ -22,6 +23,7 @@ export function Catalog() {
   const [tag, setTag] = useState<string | undefined>()
   const [sort, setSort] = useState<SortKey>('newest')
   const [freeOnly, setFreeOnly] = useState(false)
+  const [whyOpen, setWhyOpen] = useState(false)
   // Results are tagged with the query that produced them. Anything stale reads
   // as "still loading" during render, so the effect never has to setState
   // synchronously to clear the old list.
@@ -67,8 +69,11 @@ export function Catalog() {
               <ButtonLink to="#catalog" variant="primary" size="lg" className="rotate-1">
                 Browse the catalog
               </ButtonLink>
-              {/* TODO: opens the USP modal. Not built yet. */}
-              <Button variant="neutral" size="lg">
+              <Button
+                variant="neutral"
+                size="lg"
+                onClick={() => setWhyOpen(true)}
+              >
                 Why we built this
               </Button>
             </div>
@@ -159,6 +164,8 @@ export function Catalog() {
       </main>
 
       <SiteFooter />
+
+      {whyOpen ? <WhyModal onClose={() => setWhyOpen(false)} /> : null}
     </div>
   )
 }

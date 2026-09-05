@@ -1,5 +1,7 @@
 import { useRef, useState } from 'react'
 import { Freehand } from '@/components/icons/Freehand'
+import { UnpackProgress } from '@/components/publish/BuildStatus'
+import type { MountStage } from '@/lib/buildPreview'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
 
@@ -9,23 +11,39 @@ export interface UploadedBuild {
 }
 
 /**
- * Drag a zip in. The build never leaves the browser yet — we read the file's
- * name and size for realism and nothing else.
+ * Drag a zip in. It is unpacked in the browser and actually run, right here.
+ * Nothing is uploaded.
  * TODO(integration): multipart POST to /api/games with build + art + metadata.
  */
 export function Dropzone({
   onBuild,
   busy,
+  stage,
+  error,
 }: {
-  onBuild: (build: UploadedBuild) => void
+  onBuild: (file: File) => void
   busy: boolean
+  stage?: MountStage | null
+  error?: string | null
 }) {
   const [over, setOver] = useState(false)
+  const [fetching, setFetching] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   function take(file: File | undefined) {
     if (!file) return
-    onBuild({ name: file.name, sizeKb: Math.round(file.size / 1024) })
+    onBuild(file)
+  }
+
+  async function useSample() {
+    setFetching(true)
+    try {
+      const response = await fetch('/sample-game.zip')
+      const blob = await response.blob()
+      onBuild(new File([blob], 'deep-six.zip', { type: 'application/zip' }))
+    } finally {
+      setFetching(false)
+    }
   }
 
   return (
@@ -76,13 +94,21 @@ export function Dropzone({
         </Button>
         <button
           type="button"
-          disabled={busy}
-          onClick={() => take(new File([], 'sample-build.zip'))}
+          disabled={busy || fetching}
+          onClick={useSample}
           className="cursor-pointer border-0 bg-transparent font-mono text-[11px] text-ink-soft underline underline-offset-2 disabled:opacity-45"
         >
-          or use a sample build
+          {fetching ? 'fetching…' : 'or try a sample build'}
         </button>
       </div>
+
+      {busy ? <UnpackProgress stage={stage ?? null} /> : null}
+
+      {error ? (
+        <p className="max-w-[46ch] rounded-card border-2 border-ink bg-pink px-4 py-2.5 font-mono text-[11px] leading-relaxed text-paper">
+          {error}
+        </p>
+      ) : null}
     </div>
   )
 }

@@ -19,6 +19,10 @@ import {
 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { CheckoutOverlay } from '@/components/checkout/CheckoutOverlay'
+import { AgentPanel } from '@/components/listing/AgentPanel'
+import { PlayOverlay } from '@/components/play/LightsDown'
+import { ReportDialog } from '@/components/listing/ReportDialog'
+import { ReviewForm } from '@/components/listing/ReviewForm'
 import { getGame, getReviews } from '@/mocks/games'
 import { useSession } from '@/mocks/session'
 import type { Game, Review } from '@/mocks/types'
@@ -27,6 +31,9 @@ export function GameListing() {
   const { slug = '' } = useParams()
   const session = useSession()
   const [checkoutOpen, setCheckoutOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [playing, setPlaying] = useState(false)
+  const [posted, setPosted] = useState<Review[]>([])
   // Both results carry the id they were fetched for; anything stale reads as
   // loading during render rather than being cleared inside the effect.
   const [loaded, setLoaded] = useState<{
@@ -59,8 +66,10 @@ export function GameListing() {
   if (game === null) return <ListingLoading />
   if (game === undefined) return <ListingNotFound />
 
-  const reviews =
+  const fetched =
     loadedReviews?.gameId === game.id ? loadedReviews.reviews : null
+  const reviews = fetched ? [...posted, ...fetched] : null
+  const hasReviewed = posted.length > 0
 
   const owned = session.ownedGameIds.includes(game.id)
 
@@ -132,14 +141,14 @@ export function GameListing() {
 
               {owned ? (
                 <>
-                  <ButtonLink
-                    to={`/play/${game.slug}`}
+                  <Button
                     variant="go"
                     size="lg"
                     className="mt-4 w-full"
+                    onClick={() => setPlaying(true)}
                   >
                     Play now
-                  </ButtonLink>
+                  </Button>
                   <p className="mt-3 flex items-center gap-2 font-mono text-[11px] text-green">
                     <Freehand name="lock-key-1" className="h-4 w-4" />
                     You own this. The key is in your wallet.
@@ -172,6 +181,8 @@ export function GameListing() {
               </div>
             </div>
 
+            {!owned && game.priceUsd > 0 ? <AgentPanel game={game} /> : null}
+
             <div className="flex flex-wrap gap-2">
               {game.tags.map((tag) => (
                 <span
@@ -202,6 +213,12 @@ export function GameListing() {
               <p className="mt-2 font-body text-sm text-ink-soft">
                 Only people who own this game can post one.
               </p>
+              {owned && !hasReviewed ? (
+                <ReviewForm
+                  gameId={game.id}
+                  onPosted={(review) => setPosted((all) => [review, ...all])}
+                />
+              ) : null}
               <ReviewList reviews={reviews} />
             </div>
           </section>
@@ -237,6 +254,7 @@ export function GameListing() {
 
             <button
               type="button"
+              onClick={() => setReportOpen(true)}
               className="flex cursor-pointer items-center gap-2 self-start rounded-chip border-2 border-ink bg-paper px-3 py-1.5 font-mono text-[11px] text-ink-soft transition-transform duration-130 hover:-translate-y-px hover:text-pink active:translate-y-px"
             >
               <Flag size={13} strokeWidth={2.5} />
@@ -250,6 +268,18 @@ export function GameListing() {
 
       {checkoutOpen ? (
         <CheckoutOverlay game={game} onClose={() => setCheckoutOpen(false)} />
+      ) : null}
+
+      {playing ? (
+        <PlayOverlay game={game} onClose={() => setPlaying(false)} />
+      ) : null}
+
+      {reportOpen ? (
+        <ReportDialog
+          gameId={game.id}
+          gameTitle={game.title}
+          onClose={() => setReportOpen(false)}
+        />
       ) : null}
     </div>
   )

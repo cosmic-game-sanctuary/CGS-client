@@ -41,21 +41,22 @@ Not a web3 game. Not GameFi. Not an adult-content site. Say it early — ~90% of
 | Game listing | ✅ done | Cover, description, price, public splits, verified-purchase reviews, report. |
 | Checkout | ✅ done | Overlay, not a route. Sign in → fund → pay → mint → boot. All mocked. |
 | In-browser player | ✅ done | `GameStage` on the night surface + a `/play/:slug` permalink. Real build not mounted yet. |
-| Dev upload | ✅ done | Four steps: build → details → splits → publish. Preview gates the flow. Publishing pushes into the in-memory catalog, so the new game really appears. |
+| Dev upload | ✅ done | Four steps: build → details → splits → publish. **A dropped zip actually runs in the page.** Publishing pushes into the in-memory catalog. |
 | Studio profile | ✅ done | Games, ENS name, stats, and credits derived from splits. |
-| Agent setup | ⬜ next | Pick a game, set a trigger price, fund the agent's wallet. Show balance and status. Judges are told to look for this one. |
+| Agent setup | ✅ done | **On the game listing, not a page of its own.** Set a trigger instead of buying, fund its wallet there. |
 | Swipe discovery | ⬜ maybe | "Surprise me". Genuinely differentiating, pure frontend. Not on the critical demo path. |
 
-Smaller pieces still open, roughly in priority order:
+Smaller pieces:
 
-| Piece | Where | Notes |
+| Piece | Status | Notes |
 |---|---|---|
-| Write-a-review flow | Game listing | Ownership-gated. Only meaningful once a purchase has happened, which it now can. |
-| Your library | Header / new route | Games you hold keys for. Currently only reachable via the listing. |
-| "Why we built this" modal | Catalog hero | The button exists and does nothing. This is where the censorship story lives — deliberately not on the shopfront. |
-| Report flow | Game listing | Button exists, no modal behind it. |
-| Real build in the player | `GameStage` | Swap the placeholder for an `<iframe>`. Needs an actual open-source HTML5 game — don't build one. |
-| 404 / route shell | `App.tsx` | Everything unknown currently redirects to `/`. |
+| Write-a-review flow | ✅ done | Ownership-gated, appears on the listing only if you hold the key. |
+| Your library | ✅ done | `/library`. Owned keys as ticket stubs, plus the triggers you're waiting on. |
+| "Why we built this" modal | ✅ done | Catalog hero. Where the censorship story lives, deliberately off the shopfront. |
+| Report flow | ✅ done | Modal with reasons, confirmation state. |
+| Real build in the player | ✅ done | Client-side unzip plus a service worker; see §3. |
+| 404 / route shell | ⬜ todo | Everything unknown still redirects to `/`. |
+| Studio creation | ⬜ todo | `/publish` assumes you already have a studio. |
 
 **Priority if time runs short:** checkout→instant play, then drag-zip→preview, then a catalog that doesn't look empty, then the agent screen. Cut breadth, keep those four sharp.
 
@@ -82,6 +83,19 @@ The one-line version — **Paper Arcade**: ink on warm paper, hard offset shadow
 Locked as of 5 Sep 2026: name, palette, type (**Fraunces / Public Sans / Martian Mono**), physics, the seven named motions, tone B for the app and C for the landing page, and the banlist. Don't re-open these without a real reason.
 
 The banlist in [DESIGN.md §9](DESIGN.md) is the part most likely to be violated by generated code. Check against it before saying a screen is done.
+
+### Information architecture
+
+Everything about you lives behind the profile control in the top right. Two pages, one action, and the wallet inline. Keep it that way:
+
+| Where | What | Why there |
+|---|---|---|
+| `/library` — **Your games** | Keys you hold, plus triggers you've set | A trigger is a game you're trying to get, so it sits beside the ones you got. **This is why there is no agents page.** |
+| `/studio/:id` — **Your studio** | Games you made, your team, ENS name | Team and credits are public facts about the studio, not private settings. |
+| `/publish` — **Publish a game** | The upload flow | An action, not a place. A menu item, never a tab. |
+| The menu itself | Email, balance, add funds, sign out | There is nothing else to configure, so a settings page would be an empty room. |
+
+Price triggers are set **on the game listing**, under the buy box, not on a page of their own. Buying and setting a trigger are the same decision made two ways.
 
 ### Copy rules that keep getting broken
 
@@ -185,7 +199,21 @@ src/components/           CoverArt, GameCard, SplitBar, HeroCollage, GameStage,
 src/routes/               Catalog, GameListing, Player, Publish, Studio
 ```
 
-Integration seams are marked `TODO(integration)` — grep for it. They are: Privy login, Privy funding, the x402 payment call, and the real game build in `GameStage`.
+Integration seams are marked `TODO(integration)` — grep for it. They are: Privy login, Privy funding, the x402 payment call, `POST /api/agents`, reviews, reports, and the agent's demo controls.
+
+### Running a real game build in the page
+
+A dropped zip is genuinely unpacked and run, with no backend:
+
+1. `src/lib/buildPreview.ts` unzips with `fflate`, finds `index.html` (handling a single wrapper folder), and writes every file into the Cache API under `/__preview/<id>/…`.
+2. `public/preview-sw.js` is a service worker that answers any request under that prefix from the cache.
+3. `BuildFrame` points a sandboxed iframe at the entry URL.
+
+Serving from real same-origin URLs is what makes this work: the game's own relative paths, `fetch`, XHR, workers and WASM all resolve normally. URL rewriting cannot do that, which is why it wasn't used.
+
+The iframe is `sandbox="allow-scripts allow-pointer-lock allow-downloads"` — deliberately **without** `allow-same-origin`, so an uploaded build can't touch the app.
+
+`public/sample-game.zip` is a test fixture: a tiny playable game across four files that fetches `assets/palette.json` at runtime, which is the part that proves the whole build is being served and not just the entry file.
 
 Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`. The script fails loudly if an icon isn't in the free set — several obvious ones aren't.
 
@@ -214,6 +242,23 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 ### Log
 
 _Newest first._
+
+#### 2026-09-05 (play sequence, fullscreen, profile menu) — Suparno
+- **Did:** Extracted the lights-down wipe into `components/play/LightsDown.tsx` so **every** play runs it, not only a purchase. Owned games get their own beats (checking your key, loading build) with no payment theatre. Added a fullscreen control to `GameStage` with a one-shot "Press Esc to come back" hint. Collapsed the three nav links into a single profile menu.
+- **IA decided** (written up in §2): two pages behind the menu, one action, wallet inline. Agents folded into `/library` as "Waiting on a price", which removed the orphan page rather than adding a profile page that would have duplicated both.
+- **Note:** `/play/:slug` still exists as a permalink and now runs the same beats, but "Play now" from the listing and library opens an overlay instead of navigating, because the promise is that the page never goes away.
+
+#### 2026-09-05 (agent on listing, build diagnostics) — Suparno
+- **Did:** Moved the agent out of `/agent` and onto the game listing, under the buy box. Agents are now per game (`byGame` in `mocks/agent.ts`), so several listings can be watched at once. Added unpack progress and a diagnostics panel to `/publish`.
+- **Fixed a real bug:** a Godot/Unity-style build booted to a black rectangle. Cause was the iframe sandbox missing `allow-same-origin`, which gives the frame an opaque origin, and every engine that touches `localStorage` or IndexedDB throws on boot with no visible error. See the security note in `BuildFrame.tsx`.
+- **⚠ Security debt:** `allow-same-origin` on a same-origin build means the frame can reach the parent page. Fine for previewing your own build, **not** fine for running strangers' games. `TODO(security)`: serve `/__preview/` from a separate origin before this is public, the way itch.io uses `html-classic.itch.zone`.
+- **Also:** the service worker now rescues absolute paths (`/build.wasm`) by retrying them inside the referring build, and reports every 404 back to the page so the publish screen can name the missing file.
+
+#### 2026-09-05 (agent, library, real builds) — Suparno
+- **Did:** `/agent` (setup plus status, with a demo control that stands in for a live price drop), `/library`, the ownership-gated review form, the report modal, and the "Why we built this" modal. Added real in-browser build running: `fflate` unzip into the Cache API, served by `public/preview-sw.js`, run in a sandboxed iframe. Added `public/sample-game.zip` as a test fixture.
+- **Works now:** Drop a zip on `/publish` and the game plays right there. Publish it and it plays from its listing and from `/library` too.
+- **Decision — the agent's demo control stays visible but marked.** It's boxed, dashed, and labelled "Demo controls, not shipping", with a `TODO(integration)`. The real trigger is a price change on the HCS topic seen through the Mirror Node; there's no way to exercise that yet, and an untestable screen is worse than an honestly-labelled one.
+- **Next:** 404, studio creation, swipe discovery. Then Impeccable, then integrations.
 
 #### 2026-09-05 (split dial + copy pass) — Suparno
 - **Did:** Publish now scrolls to the top on step change (steps are state, not routes, so `ScrollManager` never saw them). Added `SplitDial` to the splits editor: draggable dividers with keyboard support, number inputs kept for precision. Stripped every em dash from user-visible copy and wrote the rule into §2 here and DESIGN.md §10. Removed the Streamline credit from the footer.
