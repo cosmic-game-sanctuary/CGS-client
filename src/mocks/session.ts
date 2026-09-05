@@ -32,10 +32,10 @@ let state: SessionState = {
   email: null,
   balanceUsd: 0,
   ownedGameIds: [],
-  // Mocked as an existing studio member so the dev-side screens have somewhere
-  // to point. Browsing and buying never depend on this.
-  studioId: 'st_tinroof',
-  handle: 'miracode',
+  // No studio until you make one, the same as a real new account. Browsing
+  // and buying never depend on this.
+  studioId: null,
+  handle: null,
 }
 
 const listeners = new Set<() => void>()
@@ -65,7 +65,16 @@ export function signIn(email: string) {
 }
 
 export function signOut() {
-  set({ signedIn: false, email: null })
+  // The wallet, its keys and the studio all hang off the account, so they go
+  // together. Leaving owned games behind after a sign out would be a lie.
+  set({
+    signedIn: false,
+    email: null,
+    balanceUsd: 0,
+    ownedGameIds: [],
+    studioId: null,
+    handle: null,
+  })
 }
 
 export function fund(amountUsd: number) {
@@ -79,6 +88,11 @@ export function grantKey(gameId: string, priceUsd: number) {
     balanceUsd: Math.round((state.balanceUsd - priceUsd) * 100) / 100,
     ownedGameIds: [...state.ownedGameIds, gameId],
   })
+}
+
+/** You made a studio, or accepted an invite into one. */
+export function joinStudio(studioId: string, handle: string) {
+  set({ studioId, handle })
 }
 
 export function ownsGame(gameId: string) {

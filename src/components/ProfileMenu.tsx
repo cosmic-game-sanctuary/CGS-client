@@ -116,14 +116,12 @@ export function ProfileMenu() {
 
           <nav className="flex flex-col p-1.5">
             <Item to="/library" label="Your games" hint={owned ? `${owned}` : 'none yet'} onGo={() => setOpen(false)} />
-            {studio ? (
-              <Item
-                to={`/studio/${studio.id}`}
-                label="Your studio"
-                hint={studio.name}
-                onGo={() => setOpen(false)}
-              />
-            ) : null}
+            <Item
+              to={studio ? `/studio/${studio.id}` : '/studio/new'}
+              label={studio ? 'Your studio' : 'Set up a studio'}
+              hint={studio ? studio.name : 'to publish'}
+              onGo={() => setOpen(false)}
+            />
             <Item to="/publish" label="Publish a game" onGo={() => setOpen(false)} />
           </nav>
 

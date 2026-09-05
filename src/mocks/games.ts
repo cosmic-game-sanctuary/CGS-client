@@ -451,6 +451,40 @@ export async function getReviews(gameId: string): Promise<Review[]> {
   )
 }
 
+/** The parent name every studio gets a subname under. */
+export const ENS_PARENT = 'cgs.eth'
+
+/** Mock availability. Real check is on chain against the parent registry. */
+export function ensTaken(label: string): boolean {
+  const wanted = `${label.toLowerCase()}.${ENS_PARENT}`
+  return Object.values(studios).some(
+    (studio) => studio.ens?.toLowerCase() === wanted,
+  )
+}
+
+/**
+ * TODO(integration): POST /api/studios, which also deploys the studio's own
+ * subname registry when an ENS label is given.
+ */
+export async function createStudio(input: {
+  name: string
+  ensLabel?: string
+  bio?: string
+}): Promise<Studio> {
+  const key = input.name.toLowerCase().replace(/[^a-z0-9]+/g, '') || 'studio'
+  const studio: Studio = {
+    id: `st_${key}_${Object.keys(studios).length}`,
+    name: input.name.trim(),
+    ens: input.ensLabel ? `${input.ensLabel}.${ENS_PARENT}` : undefined,
+    // TODO(integration): the real address is the Privy embedded wallet.
+    address: '0xC0FFEE1234567890AbCdEf1234567890AbCdEf12',
+    bio: input.bio?.trim() || undefined,
+    memberCount: 1,
+  }
+  studios[key + studio.id] = studio
+  return delay(studio, 700)
+}
+
 export function studioById(id: string): Studio | undefined {
   return Object.values(studios).find((studio) => studio.id === id)
 }

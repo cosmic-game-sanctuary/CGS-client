@@ -55,8 +55,8 @@ Smaller pieces:
 | "Why we built this" modal | ✅ done | Catalog hero. Where the censorship story lives, deliberately off the shopfront. |
 | Report flow | ✅ done | Modal with reasons, confirmation state. |
 | Real build in the player | ✅ done | Client-side unzip plus a service worker; see §3. |
-| 404 / route shell | ⬜ todo | Everything unknown still redirects to `/`. |
-| Studio creation | ⬜ todo | `/publish` assumes you already have a studio. |
+| 404 | ✅ done | A real page, not a redirect. Bouncing to `/` hid broken links. |
+| Studio creation | ✅ done | `/studio/new`, and `/publish` shows it as step 0 when you have none. |
 
 **Priority if time runs short:** checkout→instant play, then drag-zip→preview, then a catalog that doesn't look empty, then the agent screen. Cut breadth, keep those four sharp.
 
@@ -242,6 +242,11 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 ### Log
 
 _Newest first._
+
+#### 2026-09-05 (404, studio creation) — Suparno
+- **Did:** `NotFound` replaces the catch-all redirect, and shows the path it failed on. `StudioSetup` at `/studio/new`, also rendered inline as "step 0 of 4" when a signed-in dev hits `/publish` without a studio. Optional ENS subname under `cgs.eth` with a mocked availability check; skipping it is a first-class path, since the whole flow works on a raw address.
+- **Changed:** `session.studioId` now starts `null` like a real new account, instead of being pinned to Tin Roof. `signOut()` clears the wallet, keys and studio together rather than only the email.
+- **Testing note:** because a fresh studio has no history, the teammate roster in the splits editor is empty. There's a "join Tin Roof (demo)" link on the setup screen, marked `TODO(demo)`, so that path stays reachable.
 
 #### 2026-09-05 (listing columns) — Suparno
 - **Fixed properly:** opening the price trigger still pushed About down. Explicit row placement was not enough, because a row-spanning grid item contributes its height to *every* row it spans, so the tall right column kept growing row 1. The left side is now `display: contents` on mobile (three grid items in one column, ordered gallery, buy, about) and a real flex column at `lg`, where each side flows on its own. Nothing on the left moves when the right grows.

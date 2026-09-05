@@ -23,8 +23,9 @@ import {
   type MountStage,
 } from '@/lib/buildPreview'
 import { cn } from '@/lib/utils'
-import { publishGame, studioById, studios, studioTeam } from '@/mocks/games'
+import { publishGame, studioById, studioTeam } from '@/mocks/games'
 import { useSession } from '@/mocks/session'
+import { StudioSetup } from '@/routes/StudioSetup'
 import type { Game, MediaItem } from '@/mocks/types'
 
 /**
@@ -46,10 +47,9 @@ export function Publish() {
   const session = useSession()
   const [step, setStep] = useState<StepIndex>(0)
 
-  // Who you publish as. Falls back to Tin Roof so the flow is always testable.
-  // TODO(integration): a signed-in dev with no studio should be sent through
-  // studio creation first (POST /api/studios) rather than falling back.
-  const myStudio = studioById(session.studioId ?? '') ?? studios.tinroof
+  // You publish as a studio, so making one comes first. Everything below is
+  // written assuming it exists.
+  const myStudio = studioById(session.studioId ?? '')
   const myHandle = session.handle ?? 'you'
 
   const [build, setBuild] = useState<UploadedBuild | null>(null)
@@ -77,8 +77,11 @@ export function Publish() {
     { id: 'm_owner', label: myHandle, role: 'code', pct: 100, kind: 'you' },
   ])
   const team = useMemo(
-    () => studioTeam(myStudio.id).filter((handle) => handle !== myHandle),
-    [myStudio.id, myHandle],
+    () =>
+      myStudio
+        ? studioTeam(myStudio.id).filter((handle) => handle !== myHandle)
+        : [],
+    [myStudio, myHandle],
   )
 
   const [publishing, setPublishing] = useState(false)
@@ -136,6 +139,7 @@ export function Publish() {
   }
 
   function handlePublish() {
+    if (!myStudio) return
     setPublishing(true)
     publishGame(
       {
@@ -160,6 +164,21 @@ export function Publish() {
       setPublishing(false)
       setPublished(game)
     })
+  }
+
+  if (!myStudio) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <SiteHeader />
+        <main className="mx-auto w-full max-w-[720px] flex-1 px-6 py-10">
+          <p className="label-micro mb-6 text-ink-soft">
+            Step 0 of 4 · your studio
+          </p>
+          <StudioSetup embedded />
+        </main>
+        <SiteFooter />
+      </div>
+    )
   }
 
   if (published) {
