@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { games } from './games'
+import { notify } from './notifications'
 import { grantKey } from './session'
 
 /**
@@ -189,6 +190,13 @@ export function simulatePriceDrop(
   }
 
   grantKey(game.id, 0) // the agent paid, not the buyer's own wallet
+  notify({
+    kind: 'agent',
+    title: `Your agent bought ${game.title}`,
+    detail: `It hit $${newPrice.toFixed(2)}, under your $${agent.triggerUsd.toFixed(2)} trigger. The key is in your wallet.`,
+    amountUsd: newPrice,
+    to: `/game/${game.slug}`,
+  })
   update(gameId, (current) => ({
     ...current,
     status: 'fired',

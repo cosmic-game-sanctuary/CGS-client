@@ -10,14 +10,15 @@ import { cn } from '@/lib/utils'
  * symptom is a black rectangle and no obvious error, which is exactly the bug
  * it caused here.
  *
- * The cost is real: because the build is served from our own origin, an
- * `allow-same-origin` frame can reach the parent page. That is acceptable for
- * previewing a build you just chose yourself, and NOT acceptable for running
- * strangers' games in production.
+ * It is safe because `src` is on the **build origin**, not ours (see
+ * `src/lib/previewHost.ts`). Same-origin there means the build is same-origin
+ * with itself; it still cannot read a thing on this page. `allow-top-navigation`
+ * is deliberately absent, so a game can't move the tab out from under the
+ * player either.
  *
- * TODO(security): before this is public, serve /__preview/ from a separate
- * origin (a subdomain, the way itch.io uses html-classic.itch.zone) so the
- * frame can keep same-origin storage without being same-origin with the app.
+ * If the build origin is unreachable the mount falls back to this origin and
+ * warns in the console. That fallback is for a local dev machine only. Setting
+ * VITE_PREVIEW_ORIGIN is a launch requirement, not a nice-to-have.
  */
 export function BuildFrame({
   src,
@@ -25,7 +26,7 @@ export function BuildFrame({
   onLoad,
   className,
 }: {
-  /** A /__preview/… URL from mountBuild(). */
+  /** An absolute /__preview/… URL from mountBuild(). */
   src: string
   title: string
   onLoad?: () => void

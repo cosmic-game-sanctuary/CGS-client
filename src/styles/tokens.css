@@ -45,7 +45,7 @@
   /* ── motion — the seven named moves. DESIGN.md §4 ── */
   --animate-stamp: stamp 0.5s var(--ease-land) backwards;
   --animate-grow: grow 0.55s var(--ease-land) forwards;
-  --animate-print: printrow 0.3s ease-out forwards;
+  --animate-print: printrow 0.3s ease-out both;
   --animate-sweep: sweep 3.2s linear infinite;
   --animate-ping-ring: ping-ring 2.6s ease-out infinite;
   --animate-wobble: wobble 0.5s ease-in-out;
@@ -237,6 +237,22 @@
   @media (prefers-reduced-motion: reduce) {
     .split-seg {
       transform: scaleX(1);
+    }
+  }
+
+  /* ── Print: rows coming off a printer. DESIGN.md §4 ──
+     For anything that is a ledger: the notification inbox, the agent's event
+     log, receipts. Rows carry their own `--i` from the call site.
+     `both` and not `forwards`, or every row is visible during its delay and
+     the whole thing arrives at once. */
+  .print-rows > * {
+    animation: printrow 0.3s ease-out both;
+    animation-delay: calc(var(--i, 0) * 110ms);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .print-rows > * {
+      animation: none;
     }
   }
 }

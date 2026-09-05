@@ -1,10 +1,10 @@
 import { Logo } from '@/components/Logo'
 
 /**
- * TODO(attribution): the Streamline Freehand icons are CC BY 4.0, so a visible
- * credit linking to streamlinehq.com is required somewhere in the app before
- * this ships publicly. Removed from the footer on request, to be placed
- * elsewhere. See DESIGN.md §13.
+ * No credits here on purpose. The Freehand icons need a CC BY 4.0 attribution,
+ * and it lives in the colophon at the bottom of "Why we built this" instead:
+ * a page about how the thing was made, rather than a line under every shelf.
+ * See `WhyModal.tsx` and DESIGN.md §13.
  */
 export function SiteFooter() {
   return (

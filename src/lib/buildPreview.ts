@@ -1,20 +1,33 @@
 import { unzip } from 'fflate'
+import {
+  BuildError,
+  hostExists,
+  onServiceWorkerMessage,
+  previewHost,
+  type HostFile,
+} from '@/lib/previewHost'
 
 /**
  * Unpacks a game zip in the browser and mounts it so it can actually run.
  *
  * Files go into the Cache API under /__preview/<id>/…, and `public/preview-sw.js`
- * serves them. Because the build is served from real same-origin URLs, the
- * game's own relative paths, fetch, XHR, workers and WASM all resolve without
- * any rewriting.
+ * serves them. Because the build is served from real URLs, the game's own
+ * relative paths, fetch, XHR, workers and WASM all resolve without any
+ * rewriting.
+ *
+ * Those URLs are on a **separate origin**, so a build can keep same-origin
+ * storage without being same-origin with the app. That's why the write goes
+ * through `previewHost()` rather than touching `caches` here: the cache is over
+ * there, not here.
  *
  * Entirely client side. Nothing is uploaded anywhere.
  * TODO(integration): the published build comes from IPFS via the x402
  * download instead of a local file, and mounts through this same path.
  */
 
-const CACHE = 'cgs-preview'
 const PREFIX = '/__preview'
+
+export { BuildError }
 
 /** 250MB of decompressed build is far past anything a jam game needs. */
 const MAX_BYTES = 250 * 1024 * 1024
@@ -60,7 +73,7 @@ function mimeFor(path: string): string {
 
 export interface MountedBuild {
   id: string
-  /** URL to load in the iframe. */
+  /** Absolute URL to load in the iframe, on the build origin. */
   entry: string
   /** Path inside the zip that was used as the entry point. */
   entryPath: string
@@ -68,6 +81,8 @@ export interface MountedBuild {
   bytes: number
   /** Every path in the build, for the file list on the publish screen. */
   paths: string[]
+  /** False when the build had to run on the app's own origin. */
+  isolated: boolean
 }
 
 /** Progress, so a slow unpack never looks like a stuck one. */
@@ -92,38 +107,13 @@ export interface PreviewMiss {
   rescued: boolean
 }
 
-const missListeners = new Set<(miss: PreviewMiss) => void>()
-let messageBound = false
-
-function bindMessages() {
-  if (messageBound || !previewSupported()) return
-  messageBound = true
-  navigator.serviceWorker.addEventListener('message', (event) => {
-    const data = event.data
-    if (!data || data.source !== 'cgs-preview') return
-    if (data.kind !== 'miss' && data.kind !== 'rescued') return
-    const miss: PreviewMiss = {
-      path: String(data.path),
-      rescued: data.kind === 'rescued',
-    }
-    for (const listener of missListeners) listener(miss)
-  })
-}
-
 /** Subscribe to files the running build failed to load. */
 export function onPreviewMiss(listener: (miss: PreviewMiss) => void) {
-  bindMessages()
-  missListeners.add(listener)
-  return () => {
-    missListeners.delete(listener)
-  }
+  return onServiceWorkerMessage((data) => {
+    if (data.kind !== 'miss' && data.kind !== 'rescued') return
+    listener({ path: String(data.path), rescued: data.kind === 'rescued' })
+  })
 }
-
-export class BuildError extends Error {}
-
-// ── service worker ────────────────────────────────────────────────────────
-
-let workerReady: Promise<void> | null = null
 
 export function previewSupported(): boolean {
   return (
@@ -131,33 +121,6 @@ export function previewSupported(): boolean {
     'serviceWorker' in navigator &&
     typeof caches !== 'undefined'
   )
-}
-
-async function ensureWorker(): Promise<void> {
-  if (!previewSupported()) {
-    throw new BuildError(
-      'This browser can’t run builds in the page. Try Chrome, Edge, Firefox or Safari, and not a private window.',
-    )
-  }
-
-  workerReady ??= (async () => {
-    await navigator.serviceWorker.register('/preview-sw.js', { scope: '/' })
-    await navigator.serviceWorker.ready
-
-    // On a first visit the worker activates but isn't controlling this page
-    // yet. clients.claim() fixes that; wait for it, but don't hang forever.
-    if (!navigator.serviceWorker.controller) {
-      await new Promise<void>((resolve) => {
-        const done = () => resolve()
-        navigator.serviceWorker.addEventListener('controllerchange', done, {
-          once: true,
-        })
-        setTimeout(done, 3000)
-      })
-    }
-  })()
-
-  return workerReady
 }
 
 // ── unzip ─────────────────────────────────────────────────────────────────
@@ -199,9 +162,14 @@ export async function mountBuild(
   source: File | ArrayBuffer,
   onStage: (stage: MountStage) => void = () => {},
 ): Promise<MountedBuild> {
+  if (!previewSupported()) {
+    throw new BuildError(
+      'This browser can’t run builds in the page. Try Chrome, Edge, Firefox or Safari, and not a private window.',
+    )
+  }
+
   onStage('worker')
-  await ensureWorker()
-  bindMessages()
+  const host = await previewHost()
 
   onStage('reading')
   const raw =
@@ -234,53 +202,39 @@ export async function mountBuild(
   const id = `b${counter}-${Math.random().toString(36).slice(2, 8)}`
   const base = `${PREFIX}/${id}/`
 
-  const cache = await caches.open(CACHE)
-  await Promise.all(
-    paths.map((path) => {
-      const relative = path.startsWith(root) ? path.slice(root.length) : path
-      if (!relative) return Promise.resolve()
-      // Copy into a fresh buffer: fflate hands back views onto shared memory.
-      const body = files[path].slice()
-      return cache.put(
-        base + relative,
-        new Response(body, {
-          headers: {
-            'Content-Type': mimeFor(relative),
-            'Content-Length': String(body.length),
-            'Cache-Control': 'no-store',
-          },
-        }),
-      )
-    }),
+  const payload: HostFile[] = []
+  for (const path of paths) {
+    const relative = path.startsWith(root) ? path.slice(root.length) : path
+    if (!relative) continue
+    // Copy into a fresh buffer: fflate hands back views onto shared memory,
+    // and each buffer is handed to the host rather than cloned.
+    const body = files[path].slice().buffer as ArrayBuffer
+    payload.push({ path: relative, type: mimeFor(relative), body })
+  }
+
+  await host.send(
+    { op: 'put', base, files: payload },
+    payload.map((file) => file.body),
   )
 
   onStage('starting')
 
   return {
     id,
-    entry: base + entryPath.slice(root.length),
+    entry: host.origin + base + entryPath.slice(root.length),
     entryPath,
     fileCount: paths.length,
     bytes,
     paths: paths
       .map((path) => (path.startsWith(root) ? path.slice(root.length) : path))
       .sort(),
+    isolated: host.isolated,
   }
 }
 
 export async function unmountBuild(id: string): Promise<void> {
-  if (!previewSupported()) return
-  const cache = await caches.open(CACHE)
-  const keys = await cache.keys()
-  await Promise.all(
-    keys
-      .filter((request) => new URL(request.url).pathname.startsWith(`${PREFIX}/${id}/`))
-      .map((request) => cache.delete(request)),
-  )
-}
-
-/** Clears every previously mounted build. Safe to call on app start. */
-export async function clearBuilds(): Promise<void> {
-  if (!previewSupported()) return
-  await caches.delete(CACHE)
+  // Never spin a host up just to tidy one that was never created.
+  if (!hostExists()) return
+  const host = await previewHost()
+  await host.send({ op: 'drop', id })
 }

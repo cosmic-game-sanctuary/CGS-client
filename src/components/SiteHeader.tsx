@@ -1,8 +1,10 @@
 import { Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
+import { NotificationBell } from '@/components/NotificationBell'
 import { ProfileMenu } from '@/components/ProfileMenu'
 import { cn } from '@/lib/utils'
+import { useSession } from '@/mocks/session'
 
 /**
  * Browsing never asks for auth (CLAUDE.md §1), so the only thing on the right
@@ -17,6 +19,7 @@ export function SiteHeader({
   onSearchChange?: (value: string) => void
 }) {
   const showSearch = typeof onSearchChange === 'function'
+  const session = useSession()
 
   return (
     <header className="border-b-2 border-ink bg-paper-sunk">
@@ -40,7 +43,8 @@ export function SiteHeader({
           <div className="flex-1" />
         )}
 
-        <div className="flex shrink-0 items-center">
+        <div className="flex shrink-0 items-center gap-2.5">
+          {session.signedIn ? <NotificationBell /> : null}
           <ProfileMenu />
         </div>
       </div>

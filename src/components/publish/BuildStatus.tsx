@@ -161,6 +161,15 @@ export function BuildDiagnostics({
         </p>
       ) : null}
 
+      {/* Isolation is the one thing a dev can't see for themselves, and it is
+          the difference between a safe preview and a hostile one. */}
+      {!build.isolated ? (
+        <p className="font-mono text-[11px] text-ink-soft">
+          Running on this origin, not a separate one. Local only.{' '}
+          <code className="text-ink">VITE_PREVIEW_ORIGIN</code> is unset.
+        </p>
+      ) : null}
+
       {stuck && !loaded && failed.length === 0 ? (
         <div className="rounded-card border-2 border-ink bg-yellow p-4">
           <p className="flex items-center gap-2 font-mono text-[11px] font-bold tracking-wider uppercase">

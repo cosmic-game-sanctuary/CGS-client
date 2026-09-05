@@ -4,6 +4,7 @@
  * Every call is deliberately async with a small delay so loading states are
  * real and get designed rather than skipped.
  */
+import { notify } from './notifications'
 import type { CatalogQuery, Game, MediaItem, Review, Studio } from './types'
 
 const LATENCY_MS = 320
@@ -598,6 +599,15 @@ export async function publishGame(
   }
 
   games.unshift(game)
+  notify({
+    kind: 'live',
+    title: `${game.title} is live`,
+    detail:
+      game.splits.length > 1
+        ? `Split ${game.splits.length} ways. Locked.`
+        : 'Every sale lands in your wallet on settlement.',
+    to: `/game/${game.slug}`,
+  })
   return delay(game, 900)
 }
 

@@ -57,6 +57,8 @@ Smaller pieces:
 | Real build in the player | ✅ done | Client-side unzip plus a service worker; see §3. |
 | 404 | ✅ done | A real page, not a redirect. Bouncing to `/` hid broken links. |
 | Studio creation | ✅ done | `/studio/new`, and `/publish` shows it as step 0 when you have none. |
+| Teammate invite | ✅ done | `/invite/:id`. The other end of the splits editor. Reachable signed out. |
+| Notifications | ✅ done | A panel in the header, not a page. Sales, invites, agent buys, publishes. |
 
 **Priority if time runs short:** checkout→instant play, then drag-zip→preview, then a catalog that doesn't look empty, then the agent screen. Cut breadth, keep those four sharp.
 
@@ -94,8 +96,11 @@ Everything about you lives behind the profile control in the top right. Two page
 | `/studio/:id` — **Your studio** | Games you made, your team, ENS name | Team and credits are public facts about the studio, not private settings. |
 | `/publish` — **Publish a game** | The upload flow | An action, not a place. A menu item, never a tab. |
 | The menu itself | Email, balance, add funds, sign out | There is nothing else to configure, so a settings page would be an empty room. |
+| The bell, beside it | Sales, invites, what your agents did | **A panel, not a page.** Every row points at something that already has a home, so a `/notifications` route would be a room you pass through on the way somewhere else. |
 
 Price triggers are set **on the game listing**, under the buy box, not on a page of their own. Buying and setting a trigger are the same decision made two ways.
+
+`/invite/:id` is a landing page, not part of the IA. It is where an emailed link drops someone who may never have seen the site, so it explains itself and then gets out of the way.
 
 ### Copy rules that keep getting broken
 
@@ -168,35 +173,44 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 ### Current status
 
 **Stage:** Buyer and dev paths both complete on mock data
-**Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, `@iconify-json/streamline-freehand` (dev)
-**Screens built:** catalog (`/`), listing (`/game/:slug`), checkout overlay, player (`/play/:slug`), publish (`/publish`), studio (`/studio/:id`)
+**Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@iconify-json/streamline-freehand` (dev)
+**Screens built:** catalog (`/`), listing (`/game/:slug`), checkout overlay, player (`/play/:slug`), publish (`/publish`), studio (`/studio/:id` and `/studio/new`), library (`/library`), invite (`/invite/:id`), 404
 **Deployed:** no
 
 **Working end to end, both directions:**
 - **Buy:** browse → filter/sort/search → listing → buy → sign in → fund → pay → key mints → the game boots in the same tab. The listing then shows the owned state and the header shows your balance.
 - **Publish:** drop a zip → see it running → details, cover, price → splits by email totalling 100% → publish. **The game is then actually in the catalog** with a working listing and studio page.
+- **Get invited:** publish with someone added by email → open their invite → accept → you are in the studio, with the sales behind it in your inbox.
 
 All from `src/mocks/`. `npm run lint` and `npm run build` are both clean.
 
 **Next up:**
-1. **Agent setup screen** — judges are specifically told to look for the autonomous-purchase story, so it must be legible, not buried.
-2. The smaller open pieces listed in §1 (write-a-review, library, the USP modal, report).
-3. Install Impeccable and run `/impeccable audit` per screen.
-4. Later, as a deliberate phase: Privy, then the API, then the x402 download path.
+1. Install Impeccable and run `/impeccable audit` per screen.
+2. Swipe discovery, if there is time. Deliberately not on the critical path.
+3. Later, as a deliberate phase: Privy, then the API, then the x402 download path.
+
+Nothing is blocking a public deploy except setting `VITE_PREVIEW_ORIGIN` (§3).
 
 ### Layout of the repo
 
 ```
 scripts/build-icons.mjs   extracts only the Freehand icons we use → src/components/icons/freehand.gen.ts
+public/preview-host.html  runs on the build origin. Registers the worker and
+public/preview-sw.js      writes/serves unpacked builds. See §3.
 src/styles/tokens.css     the whole design system. DESIGN.md §12 lives here.
 src/mocks/                types.ts mirrors the API contract; games.ts is the fake
                           backend; session.ts is the Privy stand-in (a tiny
-                          useSyncExternalStore store — sign-in, balance, keys)
-src/lib/                  cn(), and format.ts for every ledger value
+                          useSyncExternalStore store — sign-in, balance, keys);
+                          agent.ts, invites.ts and notifications.ts are the same
+                          shape
+src/lib/                  cn(), format.ts for every ledger value, buildPreview.ts
+                          + previewHost.ts for running a real zip
 src/components/           CoverArt, GameCard, SplitBar, HeroCollage, GameStage,
-                          Logo, ScrollManager, SiteHeader/Footer,
-                          checkout/, publish/, icons/, ui/
-src/routes/               Catalog, GameListing, Player, Publish, Studio
+                          Logo, ScrollManager, SiteHeader/Footer, ProfileMenu,
+                          NotificationBell, checkout/, publish/, play/, listing/,
+                          icons/, ui/
+src/routes/               Catalog, GameListing, Player, Publish, Studio,
+                          StudioSetup, Library, InviteAccept, NotFound
 ```
 
 Integration seams are marked `TODO(integration)` — grep for it. They are: Privy login, Privy funding, the x402 payment call, `POST /api/agents`, reviews, reports, and the agent's demo controls.
@@ -205,15 +219,19 @@ Integration seams are marked `TODO(integration)` — grep for it. They are: Priv
 
 A dropped zip is genuinely unpacked and run, with no backend:
 
-1. `src/lib/buildPreview.ts` unzips with `fflate`, finds `index.html` (handling a single wrapper folder), and writes every file into the Cache API under `/__preview/<id>/…`.
-2. `public/preview-sw.js` is a service worker that answers any request under that prefix from the cache.
-3. `BuildFrame` points a sandboxed iframe at the entry URL.
+1. `src/lib/buildPreview.ts` unzips with `fflate` and finds `index.html`, handling a single wrapper folder.
+2. `src/lib/previewHost.ts` hands the files to a hidden iframe **on a second origin**, which writes them into the Cache API under `/__preview/<id>/…`.
+3. `public/preview-sw.js` runs on that origin and answers any request under the prefix from the cache.
+4. `BuildFrame` points a sandboxed iframe at the entry URL over there.
 
-Serving from real same-origin URLs is what makes this work: the game's own relative paths, `fetch`, XHR, workers and WASM all resolve normally. URL rewriting cannot do that, which is why it wasn't used.
+Serving from real URLs is what makes this work: the game's own relative paths, `fetch`, XHR, workers and WASM all resolve normally. URL rewriting cannot do that, which is why it wasn't used.
 
-The iframe is `sandbox="allow-scripts allow-pointer-lock allow-downloads"` — deliberately **without** `allow-same-origin`, so an uploaded build can't touch the app.
+**Why the second origin.** The frame needs `allow-same-origin`, because every engine that touches `localStorage` or IndexedDB throws on boot without it (Godot, Unity, Construct). On our own origin that would let an uploaded game read the session and rewrite the page. On its own origin it is same-origin with itself and cross-origin with us, which is the property we actually wanted. Same shape as itch.io's `html-classic.itch.zone`.
 
-`public/sample-game.zip` is a test fixture: a tiny playable game across four files that fetches `assets/palette.json` at runtime, which is the part that proves the whole build is being served and not just the entry file.
+- **Dev:** nothing to configure. `localhost`, `127.0.0.1` and `[::1]` are three origins on one machine; the app probes for whichever the dev server is listening on. Vite usually binds `[::1]` only, which is why it probes rather than assuming.
+- **Deploy:** set `VITE_PREVIEW_ORIGIN` to a subdomain serving the same `dist/`. See `.env.example`. A configured origin that doesn't answer fails hard, on purpose. With nothing configured and no twin reachable it falls back to this origin, warns in the console, and the publish diagnostics say so on screen.
+
+**The app's own origin owns no service worker.** `main.tsx` unregisters any it finds on start, because the version of this app that served builds from its own origin left one behind and it keeps controlling the page across reloads. DevTools shows the current origin's registration by default, so a stale one there looks exactly like the live one. The live worker is under **Service workers from other origins → See all registrations**.
 
 Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`. The script fails loudly if an icon isn't in the free set — several obvious ones aren't.
 
@@ -238,10 +256,25 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 | Icon delivery | Build-time extraction into `freehand.gen.ts` | `@iconify/react` fetches icon data at runtime and importing the whole set costs 2.6MB. We use ~11 icons; extracting them ships ~28KB and needs no network. |
 | Loading state | Results tagged with the query that produced them | `react-hooks` v7 forbids synchronous `setState` in an effect. Stale results read as "loading" during render instead, which also fixes the flash when filters change fast. |
 | Cover art | Deterministic generated SVG from `coverSeed` | Real art comes from devs at publish. Until then the catalog has to look intentional rather than sparse (brief, priority 3). |
+| Build isolation | A second origin, probed in dev, `VITE_PREVIEW_ORIGIN` in prod | The frame needs `allow-same-origin` to boot most engines. Giving it an origin of its own is the only way to have both that and safety. §3. |
+| Notifications | A header panel, no route | Every row points somewhere that already exists. A page would be a corridor. |
+| Invite | Its own route, reachable signed out | It is the first thing a new person ever sees of CGS, arriving from an email. Gating it behind sign-in would ask for an account before saying why. |
 
 ### Log
 
 _Newest first._
+
+#### 2026-09-05 (build origin, invites, notifications) — Suparno
+- **⚠ Security debt cleared.** Uploaded builds now run on a **separate origin** (`src/lib/previewHost.ts` + `public/preview-host.html`), so the frame keeps `allow-same-origin` without being same-origin with the app. The cache and the service worker moved over there too, which is why writing a build is now a `postMessage` rather than a `caches.put`. Full reasoning in §3.
+- **Found while building it:** Vite binds `[::1]` only on this machine, so the obvious `localhost` ↔ `127.0.0.1` swap silently fell back to the app's own origin. It now probes `[::1]`, `127.0.0.1` and `localhost` with a `no-cors` HEAD and takes the first that answers. Verified with `netstat` and `curl`, not assumed.
+- **Did:** `/invite/:id`, the receiving end of the splits editor. It leads with the fact that the share exists whether or not you accept, since the split locked at publish. Declining is reversible.
+- **Did:** notifications. A bell in the header with a panel, no route. Sales, invites, agent buys and publishes. Wired to real events where they exist (publishing, an agent firing, an invite arriving); studio sales are seeded on join and marked `TODO(demo)`.
+- **Print, finally used.** It was in the tokens and on nothing. It belongs to ledgers, so it drives the notification rows and the agent's event log. Added a `.print-rows` container that reads `--i` off each child. Changed the token from `forwards` to `both`: with a stagger delay, `forwards` shows every row before its turn.
+- **Removed:** the "join Tin Roof (demo)" hack on `StudioSetup`. The seeded invite does the same job honestly, and accepting it is what makes the teammate roster in the splits editor real.
+- **Also:** `.gitignore` now covers `.env*`, and `.env.example` documents `VITE_PREVIEW_ORIGIN`.
+- **Attribution has a home.** The Freehand CC BY 4.0 credit is a colophon at the bottom of "Why we built this", with the typefaces. That closes the last licence blocker. DESIGN.md §13.
+- **Removed** `public/sample-game.zip` and the "or try a sample build" link. We test with real builds now, and a fixture that only ever proved the plumbing was earning its 4 files.
+- **Cleanup:** the app now unregisters any service worker on its own origin at start, since the pre-refactor one survives reloads and looks live in DevTools.
 
 #### 2026-09-05 (404, studio creation) — Suparno
 - **Did:** `NotFound` replaces the catch-all redirect, and shows the path it failed on. `StudioSetup` at `/studio/new`, also rendered inline as "step 0 of 4" when a signed-in dev hits `/publish` without a studio. Optional ENS subname under `cgs.eth` with a mocked availability check; skipping it is a first-class path, since the whole flow works on a raw address.

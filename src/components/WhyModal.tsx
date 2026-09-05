@@ -63,6 +63,41 @@ export function WhyModal({ onClose }: { onClose: () => void }) {
         Payment and ownership settle on a public distributed ledger. You never
         have to think about that, and nothing on this site will ask you to.
       </p>
+
+      <Colophon />
     </Modal>
+  )
+}
+
+/**
+ * The credits. The Freehand icons are CC BY 4.0, so naming the set with a link
+ * to it is a licence condition and not a courtesy. This is its home: a page
+ * about how the thing was made is where a colophon belongs, and it keeps the
+ * shopfront clear.
+ */
+function Colophon() {
+  return (
+    <p className="mt-4 font-mono text-[10px] leading-relaxed text-ink-soft">
+      Icons by{' '}
+      <Credit href="https://streamlinehq.com">Streamline Freehand</Credit>,
+      licensed{' '}
+      <Credit href="https://creativecommons.org/licenses/by/4.0/">
+        CC BY 4.0
+      </Credit>
+      . Set in Fraunces, Public Sans and Martian Mono.
+    </p>
+  )
+}
+
+function Credit({ href, children }: { href: string; children: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-ink underline underline-offset-2"
+    >
+      {children}
+    </a>
   )
 }

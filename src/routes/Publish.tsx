@@ -24,6 +24,7 @@ import {
 } from '@/lib/buildPreview'
 import { cn } from '@/lib/utils'
 import { publishGame, studioById, studioTeam } from '@/mocks/games'
+import { createInvite } from '@/mocks/invites'
 import { useSession } from '@/mocks/session'
 import { StudioSetup } from '@/routes/StudioSetup'
 import type { Game, MediaItem } from '@/mocks/types'
@@ -86,6 +87,7 @@ export function Publish() {
 
   const [publishing, setPublishing] = useState(false)
   const [published, setPublished] = useState<Game | null>(null)
+  const [sent, setSent] = useState<Array<{ id: string; email: string }>>([])
 
   // Steps change state, not the route, so ScrollManager never sees them —
   // without this you land halfway down the next step.
@@ -161,6 +163,27 @@ export function Publish() {
       },
       myStudio,
     ).then((game) => {
+      // Anyone added by email gets an invite pointing at the game they're
+      // already credited on. Their share does not wait for them to accept.
+      // TODO(integration): POST /api/studios/:id/members, which sends the mail.
+      setSent(
+        members
+          .filter((member) => member.kind === 'invite')
+          .map((member) => ({
+            id: createInvite({
+              studioId: myStudio.id,
+              fromHandle: myHandle,
+              email: member.label,
+              game: {
+                title: game.title,
+                slug: game.slug,
+                role: member.role,
+                pct: member.pct,
+              },
+            }).id,
+            email: member.label,
+          })),
+      )
       setPublishing(false)
       setPublished(game)
     })
@@ -186,6 +209,7 @@ export function Publish() {
       <Published
         game={published}
         studioId={myStudio.id}
+        invites={sent}
         onGo={() => navigate(`/game/${published.slug}`)}
       />
     )
@@ -648,10 +672,12 @@ function Summary({
 function Published({
   game,
   studioId,
+  invites,
   onGo,
 }: {
   game: Game
   studioId: string
+  invites: Array<{ id: string; email: string }>
   onGo: () => void
 }) {
   return (
@@ -675,6 +701,31 @@ function Published({
             Your studio
           </ButtonLink>
         </div>
+        {invites.length > 0 ? (
+          <div className="w-full max-w-140 rounded-card border-2 border-dashed border-ink-faint p-4">
+            <p className="label-micro text-ink-soft">
+              Invites sent · demo controls, not shipping
+            </p>
+            <p className="mt-2 font-body text-[13px] leading-relaxed text-ink-soft">
+              These go out by email. There is no mail server here, so open one
+              to see what they receive.
+            </p>
+            {/* TODO(demo): delete. Real invites arrive in the invitee's inbox. */}
+            <ul className="mt-3 flex list-none flex-col gap-1.5 p-0">
+              {invites.map((invite) => (
+                <li key={invite.id}>
+                  <Link
+                    to={`/invite/${invite.id}`}
+                    className="font-mono text-[12px] text-ink underline underline-offset-2"
+                  >
+                    {invite.email}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
         <Link
           to="/publish"
           reloadDocument

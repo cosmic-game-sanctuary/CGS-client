@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex" />
+    <title>CGS build host</title>
+  </head>
+  <body>
+    <!--
+      Runs on the build origin, hidden inside the app. See src/lib/previewHost.ts
+      for why builds get an origin of their own.
+
+      Its whole job: register the service worker, write unpacked builds into the
+      Cache API on this side, and pass the worker's 404 reports back up. It never
+      renders anything and holds no state of its own.
+
+      Plain ES5-ish script on purpose. This file is served straight out of
+      public/ on a second origin, so nothing bundles it.
+    -->
+    <script>
+      ;(function () {
+        var CACHE = 'cgs-preview'
+        var PREFIX = '/__preview/'
+        var app = new URL(location.href).searchParams.get('app')
+
+        function post(message) {
+          if (!app) return
+          message.source = 'cgs-preview-host'
+          parent.postMessage(message, app)
+        }
+
+        function reason(error) {
+          return String((error && error.message) || error)
+        }
+
+        // Missing files are the publish screen's problem, and the publish
+        // screen is over in the app. Pass every worker report through.
+        if (navigator.serviceWorker) {
+          navigator.serviceWorker.addEventListener('message', function (event) {
+            var data = event.data
+            if (data && data.source === 'cgs-preview') {
+              post({ kind: 'sw', data: data })
+            }
+          })
+        }
+
+        function start() {
+          if (!navigator.serviceWorker || !window.caches) {
+            return Promise.reject(
+              new Error('This browser will not run builds in the page.'),
+            )
+          }
+          return navigator.serviceWorker
+            .register('/preview-sw.js', { scope: '/' })
+            .then(function () {
+              return navigator.serviceWorker.ready
+            })
+            .then(function () {
+              if (navigator.serviceWorker.controller) return undefined
+              // On a first load the worker activates without controlling this
+              // page yet. clients.claim() fixes it, but don't hang on it.
+              return new Promise(function (resolve) {
+                navigator.serviceWorker.addEventListener(
+                  'controllerchange',
+                  resolve,
+                  { once: true },
+                )
+                setTimeout(resolve, 3000)
+              })
+            })
+            .then(function () {
+              // Builds from an earlier page load belong to games that only
+              // existed in memory, so nothing here outlives the host.
+              return caches.delete(CACHE)
+            })
+        }
+
+        function run(command) {
+          return caches.open(CACHE).then(function (cache) {
+            if (command.op === 'put') {
+              return Promise.all(
+                command.files.map(function (file) {
+                  return cache.put(
+                    command.base + file.path,
+                    new Response(file.body, {
+                      headers: {
+                        'Content-Type': file.type,
+                        'Content-Length': String(file.body.byteLength),
+                        'Cache-Control': 'no-store',
+                      },
+                    }),
+                  )
+                }),
+              )
+            }
+
+            if (command.op === 'drop') {
+              var prefix = PREFIX + command.id + '/'
+              return cache.keys().then(function (keys) {
+                return Promise.all(
+                  keys
+                    .filter(function (request) {
+                      return new URL(request.url).pathname.indexOf(prefix) === 0
+                    })
+                    .map(function (request) {
+                      return cache.delete(request)
+                    }),
+                )
+              })
+            }
+
+            return Promise.reject(new Error('Unknown command: ' + command.op))
+          })
+        }
+
+        window.addEventListener('message', function (event) {
+          if (!app || event.origin !== app) return
+          var command = event.data
+          if (!command || command.source !== 'cgs-preview-app') return
+          run(command).then(
+            function () {
+              post({ kind: 'done', ticket: command.ticket })
+            },
+            function (error) {
+              post({
+                kind: 'failed',
+                ticket: command.ticket,
+                error: reason(error),
+              })
+            },
+          )
+        })
+
+        start().then(
+          function () {
+            post({ kind: 'ready' })
+          },
+          function (error) {
+            post({ kind: 'blocked', error: reason(error) })
+          },
+        )
+      })()
+    </script>
+  </body>
+</html>

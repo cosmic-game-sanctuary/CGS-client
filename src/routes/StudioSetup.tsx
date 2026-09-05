@@ -6,7 +6,7 @@ import { SiteHeader } from '@/components/SiteHeader'
 import { Button } from '@/components/ui/Button'
 import { Sticker } from '@/components/ui/Sticker'
 import { cn } from '@/lib/utils'
-import { createStudio, ENS_PARENT, ensTaken, studios } from '@/mocks/games'
+import { createStudio, ENS_PARENT, ensTaken } from '@/mocks/games'
 import { joinStudio, useSession } from '@/mocks/session'
 
 /**
@@ -50,13 +50,6 @@ export function StudioSetup({
         onDone?.()
       })
       .finally(() => setBusy(false))
-  }
-
-  /** TODO(demo): drop this. It exists so the teammate roster in the splits
-   *  editor is reachable without publishing a game first. */
-  function joinDemoStudio() {
-    joinStudio(studios.tinroof.id, 'miracode')
-    onDone?.()
   }
 
   const body = (
@@ -174,13 +167,9 @@ export function StudioSetup({
           >
             {busy ? 'Making it…' : 'Create studio'}
           </Button>
-          <button
-            type="button"
-            onClick={joinDemoStudio}
-            className="cursor-pointer border-0 bg-transparent font-mono text-[11px] text-ink-soft underline underline-offset-2"
-          >
-            or join Tin Roof (demo)
-          </button>
+          <span className="font-mono text-[11px] text-ink-soft">
+            Been invited to one? It&rsquo;s in your notifications.
+          </span>
         </div>
       </div>
     </>
@@ -191,7 +180,7 @@ export function StudioSetup({
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
-      <main className="mx-auto w-full max-w-[720px] flex-1 px-6 py-10">
+      <main className="mx-auto w-full max-w-180 flex-1 px-6 py-10">
         {body}
       </main>
       <SiteFooter />

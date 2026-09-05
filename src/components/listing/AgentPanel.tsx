@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { Freehand } from '@/components/icons/Freehand'
 import { Button } from '@/components/ui/Button'
 import { formatPrice, timeAgo, truncateAddress } from '@/lib/format'
@@ -221,9 +221,19 @@ function Watching({ game }: { game: Game }) {
           </span>
         </div>
 
-        <ul className="mt-4 flex list-none flex-col border-t-2 border-paper/30 p-0 pt-2 font-mono text-[11px]">
-          {agent.events.slice(0, 4).map((entry) => (
-            <li key={entry.id} className="flex justify-between gap-3 py-1">
+        {/* Print (DESIGN.md §4): the agent's log is a ledger, so it arrives
+            like one. Keyed on the newest event so a new line reprints the run
+            rather than appearing out of nowhere. */}
+        <ul
+          key={agent.events[0]?.id}
+          className="print-rows mt-4 flex list-none flex-col border-t-2 border-paper/30 p-0 pt-2 font-mono text-[11px]"
+        >
+          {agent.events.slice(0, 4).map((entry, i) => (
+            <li
+              key={entry.id}
+              style={{ '--i': i } as CSSProperties}
+              className="flex justify-between gap-3 py-1"
+            >
               <span
                 className={cn('min-w-0 truncate', entry.kind === 'fired' && 'font-bold')}
               >

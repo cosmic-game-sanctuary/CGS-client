@@ -1,4 +1,7 @@
 import { useSyncExternalStore } from 'react'
+import { games } from './games'
+import { seedIncomingInvite } from './invites'
+import { clearInbox, notify, seedStudioActivity } from './notifications'
 
 /**
  * Mock session and wallet.
@@ -62,9 +65,25 @@ export function useSession(): SessionState {
 
 export function signIn(email: string) {
   set({ signedIn: true, email })
+
+  // TODO(demo): a real account's inbox arrives from the server. This one
+  // starts with the invite, because being invited is how most people get a
+  // studio and there's no other way to receive one in a mock.
+  const invite = seedIncomingInvite(email)
+  if (invite) {
+    notify({
+      kind: 'invite',
+      title: `${invite.fromHandle} added you to ${invite.studioName}`,
+      detail: invite.game
+        ? `${invite.game.pct}% of ${invite.game.title}, for ${invite.game.role}.`
+        : 'They want you on the team.',
+      to: `/invite/${invite.id}`,
+    })
+  }
 }
 
 export function signOut() {
+  clearInbox()
   // The wallet, its keys and the studio all hang off the account, so they go
   // together. Leaving owned games behind after a sign out would be a lie.
   set({
@@ -93,6 +112,15 @@ export function grantKey(gameId: string, priceUsd: number) {
 /** You made a studio, or accepted an invite into one. */
 export function joinStudio(studioId: string, handle: string) {
   set({ studioId, handle })
+
+  // TODO(demo): a studio that already ships has sales behind it, and seeing
+  // them is the point of the inbox. A studio you just created gets nothing,
+  // which is correct.
+  const backCatalogue = games.filter((game) => game.studio.id === studioId)
+  seedStudioActivity(
+    backCatalogue.map((game) => ({ title: game.title, slug: game.slug })),
+    (index) => [1.35, 0.9, 2.25][index] ?? 1,
+  )
 }
 
 export function ownsGame(gameId: string) {

@@ -2,6 +2,7 @@ import { BrowserRouter, Route, Routes } from 'react-router-dom'
 import { ScrollManager } from '@/components/ScrollManager'
 import { Catalog } from '@/routes/Catalog'
 import { GameListing } from '@/routes/GameListing'
+import { InviteAccept } from '@/routes/InviteAccept'
 import { Library } from '@/routes/Library'
 import { NotFound } from '@/routes/NotFound'
 import { Player } from '@/routes/Player'
@@ -21,6 +22,9 @@ export default function App() {
         <Route path="/studio/new" element={<StudioSetup />} />
         <Route path="/studio/:id" element={<Studio />} />
         <Route path="/library" element={<Library />} />
+        {/* Where an emailed invite lands. Reachable signed out, like everything
+            else; signing in is only asked for at the point of claiming. */}
+        <Route path="/invite/:id" element={<InviteAccept />} />
         {/* Price triggers live on the game listing, not a page of their own.
             Still unbuilt: swipe discovery. */}
         <Route path="*" element={<NotFound />} />

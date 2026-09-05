@@ -27,23 +27,11 @@ export function Dropzone({
   error?: string | null
 }) {
   const [over, setOver] = useState(false)
-  const [fetching, setFetching] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   function take(file: File | undefined) {
     if (!file) return
     onBuild(file)
-  }
-
-  async function useSample() {
-    setFetching(true)
-    try {
-      const response = await fetch('/sample-game.zip')
-      const blob = await response.blob()
-      onBuild(new File([blob], 'deep-six.zip', { type: 'application/zip' }))
-    } finally {
-      setFetching(false)
-    }
   }
 
   return (
@@ -84,23 +72,13 @@ export function Dropzone({
         onChange={(event) => take(event.target.files?.[0])}
       />
 
-      <div className="flex flex-wrap items-center justify-center gap-3">
-        <Button
-          variant="neutral"
-          disabled={busy}
-          onClick={() => inputRef.current?.click()}
-        >
-          {busy ? 'Unpacking…' : 'Choose a file'}
-        </Button>
-        <button
-          type="button"
-          disabled={busy || fetching}
-          onClick={useSample}
-          className="cursor-pointer border-0 bg-transparent font-mono text-[11px] text-ink-soft underline underline-offset-2 disabled:opacity-45"
-        >
-          {fetching ? 'fetching…' : 'or try a sample build'}
-        </button>
-      </div>
+      <Button
+        variant="neutral"
+        disabled={busy}
+        onClick={() => inputRef.current?.click()}
+      >
+        {busy ? 'Unpacking…' : 'Choose a file'}
+      </Button>
 
       {busy ? <UnpackProgress stage={stage ?? null} /> : null}
 

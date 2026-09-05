@@ -135,7 +135,7 @@ Motion comes from the material: **paper doesn't fade in, it lands.** Naming them
 | **Register** | 850ms. Two offset colour plates (red `+8,-6`, blue `-7,+6`) converge to zero and fade out over an ink layer. | Page load on the wordmark; purchase confirmation. **Rare, so it stays special.** |
 | **Deal** | 70ms stagger, left to right, each child running Stamp. | Catalog grids, split rows, review lists. |
 | **Grow** | 550ms `scaleX(0→1)`, `transform-origin: left`. Staggered 160ms per segment. Labels fade in only after their segment lands. | Split bars, funding meters, agent balance. |
-| **Print** | 300ms per row, 110ms apart, `clip-path: inset(0 0 100% 0) → 0` plus `translateY(-7px)`. | The HCS ledger, receipts, purchase history. |
+| **Print** | 300ms per row, 110ms apart, `clip-path: inset(0 0 100% 0) → 0` plus `translateY(-7px)`. | The HCS ledger, receipts, purchase history. In the app today: the notification inbox and the agent's event log. Use the `.print-rows` container and give each child its own `--i`. |
 | **Watch** | Ping rings 2.6s + conic sweep 3.2s, both infinite. | **Agent only.** The one ambient loop in the product. |
 | **Press** | 130ms, see §3. | Everything interactive. |
 
@@ -343,7 +343,10 @@ Write from the user's side of the screen. Active voice. A control says exactly w
   /* ── motion ── */
   --animate-stamp: stamp .5s var(--ease-land) backwards;
   --animate-grow:  grow .55s var(--ease-land) forwards;
-  --animate-print: printrow .3s ease-out forwards;
+  --animate-print: printrow .3s ease-out both;   /* `both`, not `forwards`:
+                                                    with a stagger delay,
+                                                    `forwards` shows every row
+                                                    before its turn. */
   --animate-sweep: sweep 3.2s linear infinite;
   --animate-ping-ring: ping 2.6s ease-out infinite;
   --animate-wobble: wobble .5s ease-in-out;
@@ -406,9 +409,13 @@ Write from the user's side of the screen. Active voice. A control says exactly w
 
 ---
 
-## 13. Attribution (required, currently missing)
+## 13. Attribution (required, satisfied)
 
-The Freehand icon set is CC BY 4.0, which requires a visible credit with a link to streamlinehq.com. **It was removed from the footer on 5 Sep 2026 and has not been placed anywhere else yet** — `TODO(attribution)` in `SiteFooter.tsx`. It needs a home before this ships publicly. An about page, a colophon, or a credits line on the landing page all work.
+The Freehand icon set is CC BY 4.0, which requires a visible credit naming the set with a link to streamlinehq.com.
+
+**It lives in the colophon at the bottom of "Why we built this"** (`WhyModal.tsx`), alongside the typefaces. It was in the footer until 5 Sep 2026, then moved: a modal about how the thing was made is where a colophon belongs, and it keeps a credits line off every shelf in the shop.
+
+If that modal is ever cut or the icon set is swapped, the credit moves with it. It is a licence condition, not decoration.
 
 Wording:
 

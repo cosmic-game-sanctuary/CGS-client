@@ -2,10 +2,13 @@
  * Serves unpacked game builds from the Cache API so a dropped zip can actually
  * run in an iframe.
  *
- * The main thread unzips and writes every file into the `cgs-preview` cache
- * under /__preview/<id>/<path>; this worker answers requests from it. Serving
- * real same-origin URLs is what makes a build work unchanged: its relative
- * paths, fetch, XHR, workers and WASM all resolve normally.
+ * Runs on the **build origin**, registered by `preview-host.html` — not on the
+ * app's origin. See src/lib/previewHost.ts for why builds live somewhere else.
+ *
+ * The app unzips and hands the files to the host, which writes them into the
+ * `cgs-preview` cache under /__preview/<id>/<path>; this worker answers
+ * requests from it. Serving real URLs is what makes a build work unchanged: its
+ * relative paths, fetch, XHR, workers and WASM all resolve normally.
  *
  * Two things beyond a plain cache lookup:
  *
