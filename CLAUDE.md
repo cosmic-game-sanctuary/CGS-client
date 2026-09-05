@@ -269,6 +269,13 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 
 _Newest first._
 
+#### 2026-09-06 (new mark) — Suparno
+- **The logo changed.** `DEFAULT_MARK` is now **`saturn`**, a ringed planet. Fold was a flat page icon with no mass, and next to the name it read as a file, not a sanctuary. Fold is still in `MARKS` if this needs reversing.
+- **How it is drawn:** the ring passes in front of the planet and out the other side, which in flat monochrome is the **symmetric difference** of the two shapes. Two masks, not a band painted in the background colour, so the mark still works on ink, on paper and on yellow. Favicon rebuilt to match at .85 scale.
+- **Sizes moved up one step** (`h-8` header, `h-7` footer). Saturn fills its box sideways and runs about two thirds of its height, so the old square sizes made it look undersized beside the wordmark.
+- **Bug, found on first look:** the mark rendered mirrored in the app. PIL's `Image.rotate` turns counter-clockwise, SVG's `rotate()` turns clockwise because its y-axis points down, so the same `16` in both files tilts the ring opposite ways. The SVG carries `-16`. Commented in both files, since it looks like a typo and will get "fixed" back otherwise.
+- **Note:** the social assets live in `../social/` (outside every repo, untracked on purpose). `../social/marks.py` holds the same geometry drawn with Pillow. If the mark changes, change it in both.
+
 #### 2026-09-05 (build origin, invites, notifications) — Suparno
 - **⚠ Security debt cleared.** Uploaded builds now run on a **separate origin** (`src/lib/previewHost.ts` + `public/preview-host.html`), so the frame keeps `allow-same-origin` without being same-origin with the app. The cache and the service worker moved over there too, which is why writing a build is now a `postMessage` rather than a `caches.put`. Full reasoning in §3.
 - **Found while building it:** Vite binds `[::1]` only on this machine, so the obvious `localhost` ↔ `127.0.0.1` swap silently fell back to the app's own origin. It now probes `[::1]`, `127.0.0.1` and `localhost` with a `no-cors` HEAD and takes the first that answers. Verified with `netstat` and `curl`, not assumed.

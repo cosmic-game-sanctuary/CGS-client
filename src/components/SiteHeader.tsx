@@ -25,7 +25,7 @@ export function SiteHeader({
     <header className="border-b-2 border-ink bg-paper-sunk">
       <div className="mx-auto flex max-w-page flex-wrap items-center gap-x-5 gap-y-3 px-6 py-3.5">
         <Link to="/" className="shrink-0 text-ink no-underline">
-          <Logo markClassName="h-7 w-7" />
+          <Logo markClassName="h-8 w-8" />
         </Link>
 
         {showSearch ? (

@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
  * logo, so every one of these is a flat geometric shape, not a character.
  */
 export type MarkName =
+  | 'saturn'
   | 'arch'
   | 'cartridge'
   | 'plate'
@@ -17,9 +18,59 @@ export type MarkName =
   | 'fold'
 
 /** Change this one word to change the mark everywhere. */
-export const DEFAULT_MARK: MarkName = 'fold'
+export const DEFAULT_MARK: MarkName = 'saturn'
 
 const MARKS: Record<MarkName, React.ReactNode> = {
+  /** A ringed planet, in use since 6 Sep 2026. The ring passes in front of
+   *  the planet and out the other side, which in flat monochrome is the
+   *  symmetric difference of the two shapes: the planet minus the ring, plus
+   *  the ring minus the planet. Done with masks rather than by painting the
+   *  crossing band in the background colour, so the mark still works on ink,
+   *  on paper and on yellow.
+   *
+   *  The ids repeat if two Logos are on the page at once. That is fine here
+   *  because every instance defines identical geometry, so whichever one the
+   *  browser resolves to draws the same shape.
+   *
+   *  Same geometry, drawn with Pillow, in ../../../social/marks.py. Change
+   *  one and change the other, and note that the tilt is NEGATIVE here: SVG
+   *  rotates clockwise because its y-axis points down, while PIL's
+   *  Image.rotate goes counter-clockwise. Same number in both files would
+   *  mirror the mark, which is exactly what happened first time. */
+  saturn: (
+    <>
+      <mask id="cgs-ring" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+        <rect width="32" height="32" fill="#fff" />
+        <ellipse
+          cx="16"
+          cy="17.92"
+          rx="14.56"
+          ry="4.8"
+          transform="rotate(-16 16 17.92)"
+          fill="none"
+          stroke="#000"
+          strokeWidth="2.88"
+        />
+      </mask>
+      <mask id="cgs-planet" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+        <rect width="32" height="32" fill="#fff" />
+        <circle cx="16" cy="15.36" r="10.24" fill="#000" />
+      </mask>
+      <circle cx="16" cy="15.36" r="10.24" mask="url(#cgs-ring)" />
+      <ellipse
+        cx="16"
+        cy="17.92"
+        rx="14.56"
+        ry="4.8"
+        transform="rotate(-16 16 17.92)"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.88"
+        mask="url(#cgs-planet)"
+      />
+    </>
+  ),
+
   /** Sanctuary doorway with a play triangle knocked out. Reads as a keyhole
    *  at small sizes, which is also on-message. */
   arch: (
@@ -107,7 +158,10 @@ export function LogoMark({
       viewBox="0 0 32 32"
       fill="currentColor"
       aria-hidden="true"
-      className={cn('block h-7 w-7 shrink-0', className)}
+      // Saturn fills the box sideways and runs about two thirds of its
+      // height, so the square it sits in is a size up from what the old
+      // upright mark needed.
+      className={cn('block h-8 w-8 shrink-0', className)}
     >
       {MARKS[mark]}
     </svg>

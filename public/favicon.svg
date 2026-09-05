@@ -1,10 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect width="32" height="32" rx="6" fill="#FFE800"/>
   <rect x="1" y="1" width="30" height="30" rx="5" fill="none" stroke="#16130F" stroke-width="2"/>
-  <g transform="translate(16 16) scale(.76) translate(-16 -16)">
-    <path fill="#16130F" fill-rule="evenodd" clip-rule="evenodd"
-          d="M5 3h14v8h8v18H5V3Zm7.8 10v8.8l7.8-4.4-7.8-4.4Z"/>
-    <path d="M19 3.6 26.4 11H19V3.6Z" fill="none" stroke="#16130F"
-          stroke-width="2.2" stroke-linejoin="round"/>
-  </g>
+  <!-- Saturn, at .85 of the mark in src/components/Logo.tsx so it clears the
+       badge border. Planet minus ring, plus ring minus planet. -->
+  <mask id="r" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+    <rect width="32" height="32" fill="#fff"/>
+    <ellipse cx="16" cy="17.63" rx="12.38" ry="4.08" transform="rotate(-16 16 17.63)"
+             fill="none" stroke="#000" stroke-width="2.45"/>
+  </mask>
+  <mask id="p" maskUnits="userSpaceOnUse" x="0" y="0" width="32" height="32">
+    <rect width="32" height="32" fill="#fff"/>
+    <circle cx="16" cy="15.46" r="8.7" fill="#000"/>
+  </mask>
+  <circle cx="16" cy="15.46" r="8.7" fill="#16130F" mask="url(#r)"/>
+  <ellipse cx="16" cy="17.63" rx="12.38" ry="4.08" transform="rotate(-16 16 17.63)"
+           fill="none" stroke="#16130F" stroke-width="2.45" mask="url(#p)"/>
 </svg>
