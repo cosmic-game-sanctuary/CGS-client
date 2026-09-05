@@ -8,11 +8,16 @@ Working rules for this repo. Read before writing any code.
 |---|---|---|
 | `CGS-client` | ← you are here. Vite + React web app. | read / write |
 | `CGS-server` | Node + Express + Drizzle + Hedera. Kai's. | **read only** |
-| `CGS-docs` | Product, technical and shared progress docs. | **read only** |
+| `CGS-docs` | Product story and shared progress log. | read only, **except `PROGRESS-LOG.md`** |
 
-Never write to the sibling repos. Read from them freely — `../CGS-docs/cgs-ideation.md` is the product story and `../CGS-docs/cgs-technical.md` is the backend detail.
+Never write to `CGS-server`, and never to `CGS-docs` beyond `PROGRESS-LOG.md`, which is the shared handover and is meant to be written to from both sides. Read from them freely:
 
-> **Note:** `../CGS-docs/CLAUDE.md` exists and governs the *backend/chain* side. It is not this file. Where they overlap (the hard product rules), they agree.
+| File | What |
+|---|---|
+| `../CGS-docs/README.md` | The product story and the three claims that have to be true in code. |
+| `../CGS-docs/PROGRESS-LOG.md` | Shared status, blockers, open questions, the API contract in both directions. **Read this at session start** and add a frontend entry at session end. |
+
+> The ideation and technical docs that used to live in `CGS-docs` are gone; `README.md` carries the product story now and `PROGRESS-LOG.md` carries the contract. There is no `CGS-docs/CLAUDE.md` any more either. If someone re-adds them, update this table.
 
 ---
 
@@ -358,6 +363,8 @@ _Newest first._
 
 **At session start:** read §4 — current status, blockers, and the most recent log entry. Read [DESIGN.md](DESIGN.md) before touching UI.
 
-**At session end:** append a log entry (what changed, what works now, what's next, anything Kai needs to know), update the status block, add or clear blockers, and record any new decision in the decisions table. Append; never rewrite history.
+**At session end:** append a log entry here (what changed, what works now, what's next), update the status block, add or clear blockers, and record any new decision in the decisions table. Append; never rewrite history.
+
+**Anything the other side needs goes in `../CGS-docs/PROGRESS-LOG.md` instead**, not here. That means anything crossing the repo boundary, any decision that changes the contract, and anything only they can answer. Its header has the entry template, and entries there are tagged by side rather than by person. It's the one sibling-repo file we write to.
 
 **Never commit `.env` or a private key.** Check `.gitignore` covers it before the first commit in any new package.
