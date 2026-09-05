@@ -2,7 +2,9 @@ import { Search } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Logo } from '@/components/Logo'
 import { Button } from '@/components/ui/Button'
+import { formatPrice } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { useSession } from '@/mocks/session'
 
 /**
  * Browsing never asks for auth — CLAUDE.md §1. The control says "Sign in", not
@@ -15,6 +17,7 @@ export function SiteHeader({
   search?: string
   onSearchChange?: (value: string) => void
 }) {
+  const session = useSession()
   const showSearch = typeof onSearchChange === 'function'
 
   return (
@@ -46,9 +49,26 @@ export function SiteHeader({
           >
             Publish a game
           </Link>
-          <Button size="sm" variant="neutral">
-            Sign in
-          </Button>
+
+          {session.signedIn ? (
+            <span className="flex items-center gap-2.5 rounded-chip border-2 border-ink bg-paper px-3 py-1.5">
+              <span
+                className="max-w-[13ch] truncate font-mono text-[11px] text-ink-soft"
+                title={session.email ?? undefined}
+              >
+                {session.email}
+              </span>
+              <span className="font-mono tnum text-[11px] font-bold text-green">
+                {formatPrice(session.balanceUsd)}
+              </span>
+            </span>
+          ) : (
+            // TODO(integration): Privy login. Buying signs you in on the way
+            // through, so this is a convenience, never a gate on browsing.
+            <Button size="sm" variant="neutral">
+              Sign in
+            </Button>
+          )}
         </nav>
       </div>
     </header>

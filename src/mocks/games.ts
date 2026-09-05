@@ -419,14 +419,3 @@ export function allTags(): string[] {
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([tag]) => tag)
 }
-
-/**
- * Mock auth. Real Privy integration is a later phase (CLAUDE.md §3) — this
- * exists so signed-in and signed-out layouts can both be built and reviewed.
- */
-export const mockSession = {
-  signedIn: false,
-  email: 'mira@tinroof.studio',
-  /** Games this wallet holds a GameKey for. */
-  ownedGameIds: ['gm_tinhalo'],
-}

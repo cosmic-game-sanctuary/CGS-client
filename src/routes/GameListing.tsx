@@ -18,11 +18,15 @@ import {
   truncateAddress,
 } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { getGame, getReviews, mockSession } from '@/mocks/games'
+import { CheckoutOverlay } from '@/components/checkout/CheckoutOverlay'
+import { getGame, getReviews } from '@/mocks/games'
+import { useSession } from '@/mocks/session'
 import type { Game, Review } from '@/mocks/types'
 
 export function GameListing() {
   const { slug = '' } = useParams()
+  const session = useSession()
+  const [checkoutOpen, setCheckoutOpen] = useState(false)
   // Both results carry the id they were fetched for; anything stale reads as
   // loading during render rather than being cleared inside the effect.
   const [loaded, setLoaded] = useState<{
@@ -58,7 +62,7 @@ export function GameListing() {
   const reviews =
     loadedReviews?.gameId === game.id ? loadedReviews.reviews : null
 
-  const owned = mockSession.ownedGameIds.includes(game.id)
+  const owned = session.ownedGameIds.includes(game.id)
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -143,7 +147,12 @@ export function GameListing() {
                 </>
               ) : (
                 <>
-                  <Button variant="primary" size="lg" className="mt-4 w-full">
+                  <Button
+                    variant="primary"
+                    size="lg"
+                    className="mt-4 w-full"
+                    onClick={() => setCheckoutOpen(true)}
+                  >
                     {game.priceUsd === 0
                       ? 'Get it free · play now'
                       : `Buy · ${formatPrice(game.priceUsd)}`}
@@ -238,6 +247,10 @@ export function GameListing() {
       </main>
 
       <SiteFooter />
+
+      {checkoutOpen ? (
+        <CheckoutOverlay game={game} onClose={() => setCheckoutOpen(false)} />
+      ) : null}
     </div>
   )
 }

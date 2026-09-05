@@ -35,16 +35,27 @@ Not a web3 game. Not GameFi. Not an adult-content site. Say it early — ~90% of
 
 ### Screens we own
 
-| Screen | Notes |
-|---|---|
-| Catalog / browse | Grid of games. **Must work with no wallet and no login.** |
-| Game listing | Cover art, screenshots, description, price, reviews, buy. |
-| Checkout | Sign in → fund if needed → pay → key mints → play. The critical path. |
-| In-browser player | Loads the build. The payoff. |
-| Dev upload | Drag a zip → **see it playing in the page before publishing** → price → teammates by email → splits totalling 100% → publish. |
-| Studio profile | Games, ENS name if claimed. |
-| Agent setup | Pick a game, set a trigger price, fund the agent's wallet. Show balance and status. |
-| Swipe discovery | "Surprise me". Genuinely differentiating, pure frontend. **Keep in mind, not building first.** |
+| Screen | Status | Notes |
+|---|---|---|
+| Catalog / browse | ✅ done | Grid, filters, sort, search, empty + loading states. Works with no wallet and no login. |
+| Game listing | ✅ done | Cover, description, price, public splits, verified-purchase reviews, report. |
+| Checkout | ✅ done | Overlay, not a route. Sign in → fund → pay → mint → boot. All mocked. |
+| In-browser player | ✅ done | `GameStage` on the night surface + a `/play/:slug` permalink. Real build not mounted yet. |
+| Dev upload | ⬜ next | Drag a zip → **see it playing in the page before publishing** → price → teammates by email → splits totalling 100% → publish. |
+| Studio profile | ⬜ todo | Games, ENS name if claimed. |
+| Agent setup | ⬜ todo | Pick a game, set a trigger price, fund the agent's wallet. Show balance and status. |
+| Swipe discovery | ⬜ maybe | "Surprise me". Genuinely differentiating, pure frontend. Not on the critical demo path. |
+
+Smaller pieces still open, roughly in priority order:
+
+| Piece | Where | Notes |
+|---|---|---|
+| Write-a-review flow | Game listing | Ownership-gated. Only meaningful once a purchase has happened, which it now can. |
+| Your library | Header / new route | Games you hold keys for. Currently only reachable via the listing. |
+| "Why we built this" modal | Catalog hero | The button exists and does nothing. This is where the censorship story lives — deliberately not on the shopfront. |
+| Report flow | Game listing | Button exists, no modal behind it. |
+| Real build in the player | `GameStage` | Swap the placeholder for an `<iframe>`. Needs an actual open-source HTML5 game — don't build one. |
+| 404 / route shell | `App.tsx` | Everything unknown currently redirects to `/`. |
 
 **Priority if time runs short:** checkout→instant play, then drag-zip→preview, then a catalog that doesn't look empty, then the agent screen. Cut breadth, keep those four sharp.
 
@@ -136,17 +147,17 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Catalog + game listing on mock data
+**Stage:** Buyer path complete on mock data
 **Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, `@iconify-json/streamline-freehand` (dev)
-**Screens built:** catalog (`/`), game listing (`/game/:slug`)
+**Screens built:** catalog (`/`), game listing (`/game/:slug`), checkout overlay, player (`/play/:slug`)
 **Deployed:** no
 
-**Working end to end:** browse the catalog, filter by tag, sort, toggle free-only, search, open a listing, read splits and reviews. All from `src/mocks/`. `npm run lint` and `npm run build` are both clean.
+**Working end to end:** browse → filter/sort/search → open a listing → **buy → sign in → fund → pay → key mints → the game boots in the same tab**. Come back out and the listing shows the owned state, the header shows your balance, and `/play/:slug` works as a permalink. All from `src/mocks/`. `npm run lint` and `npm run build` are both clean.
 
 **Next up:**
-1. **Checkout → instant play** — the lights-down sequence ([DESIGN.md §5](DESIGN.md)). Highest-value polish in the product; still on mock data.
-2. Dev upload + splits editor (drag zip → preview → price → teammates by email → publish).
-3. Studio profile, agent setup screen.
+1. **Dev upload + splits editor** — drag zip → see it running before publish → price → teammates by email → publish. Priority 2 in the brief.
+2. Studio profile, then the agent setup screen.
+3. The smaller open pieces listed in §1.
 4. Install Impeccable and run `/impeccable audit` per screen.
 5. Later, as a deliberate phase: Privy, then the API, then the x402 download path.
 
@@ -155,11 +166,16 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 ```
 scripts/build-icons.mjs   extracts only the Freehand icons we use → src/components/icons/freehand.gen.ts
 src/styles/tokens.css     the whole design system. DESIGN.md §12 lives here.
-src/mocks/                types.ts mirrors the API contract; games.ts is the fake backend
+src/mocks/                types.ts mirrors the API contract; games.ts is the fake
+                          backend; session.ts is the Privy stand-in (a tiny
+                          useSyncExternalStore store — sign-in, balance, keys)
 src/lib/                  cn(), and format.ts for every ledger value
-src/components/           CoverArt, GameCard, SplitBar, SiteHeader/Footer, icons/, ui/
-src/routes/               Catalog, GameListing
+src/components/           CoverArt, GameCard, SplitBar, HeroCollage, GameStage,
+                          Logo, ScrollManager, SiteHeader/Footer, checkout/, icons/, ui/
+src/routes/               Catalog, GameListing, Player
 ```
+
+Integration seams are marked `TODO(integration)` — grep for it. They are: Privy login, Privy funding, the x402 payment call, and the real game build in `GameStage`.
 
 Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`. The script fails loudly if an icon isn't in the free set — several obvious ones aren't.
 
@@ -188,6 +204,12 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 ### Log
 
 _Newest first._
+
+#### 2026-09-05 (checkout) — Suparno
+- **Did:** Built the critical path. `src/mocks/session.ts` replaces the old `mockSession` object with a real reactive store (sign-in, wallet balance, held keys). `CheckoutOverlay` runs sign in → fund → confirm → pay, then the lights-down wipe. `GameStage` is the night play surface; `/play/:slug` is the owned-game permalink. Header now shows email + balance when signed in.
+- **Works now:** The whole buyer journey, end to end, on mocks. Balance starts at $0 so the fund step is part of the default first run.
+- **Decision — overlay, not a route:** the promise is "boots in the same tab, seconds later." A navigation unmounts the page and breaks exactly what we're claiming, so checkout is an overlay over the listing and the wipe happens in place. `/play/:slug` exists separately for replaying something you already own.
+- **Next:** Dev upload + splits editor.
 
 #### 2026-09-05 (review pass 2) — Suparno
 - **Did:** Logo locked to **Fold** (`DEFAULT_MARK` in `src/components/Logo.tsx`); reworked its dog-ear as a true cutout with an outlined flap so it carries no background-colour dependency, and did the same to `stub`. New favicon. Added `ScrollManager` — Router keeps scroll across navigations, which is why listings opened halfway down; it also now honours hash links, so the hero CTA actually reaches the grid. Fixed "Split 1 ways" → "One person", with matching footer copy. Replaced the hero headline.

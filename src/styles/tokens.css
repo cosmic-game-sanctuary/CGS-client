@@ -244,6 +244,16 @@
     padding: 0 0.12em;
   }
 
+  /* Lights down — the store→play wipe. DESIGN.md §5.
+     A clip-path pair rather than opacity, so the night ground arrives as an
+     edge sweeping down the page instead of a cross-fade. */
+  .wipe-up {
+    clip-path: inset(0 0 100% 0);
+  }
+  .wipe-down {
+    clip-path: inset(0 0 0 0);
+  }
+
   /* Hatched placeholder — replaces skeleton shimmer. §8 */
   .hatch {
     background-image: repeating-linear-gradient(
