@@ -4,7 +4,7 @@
  * Every call is deliberately async with a small delay so loading states are
  * real and get designed rather than skipped.
  */
-import type { CatalogQuery, Game, Review, Studio } from './types'
+import type { CatalogQuery, Game, MediaItem, Review, Studio } from './types'
 
 const LATENCY_MS = 320
 
@@ -514,6 +514,8 @@ export interface GameDraft {
   splits: Game['splits']
   buildKb: number
   localBuildEntry?: string
+  coverUrl?: string
+  media?: MediaItem[]
 }
 
 function slugify(title: string): string {
@@ -557,6 +559,8 @@ export async function publishGame(
     plays: 0,
     buildKb: draft.buildKb,
     localBuildEntry: draft.localBuildEntry,
+    coverUrl: draft.coverUrl,
+    media: draft.media,
   }
 
   games.unshift(game)

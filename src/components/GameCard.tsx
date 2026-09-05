@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
-import { CoverArt } from '@/components/CoverArt'
+import { Cover } from '@/components/Cover'
 import { PriceChip } from '@/components/ui/PriceChip'
 import { Sticker } from '@/components/ui/Sticker'
 import { displayIdentity } from '@/lib/format'
@@ -41,8 +41,8 @@ export function GameCard({
       )}
     >
       <div className="overflow-hidden border-b-2 border-ink">
-        <CoverArt
-          seed={game.coverSeed}
+        <Cover
+          game={game}
           className="transition-transform duration-420 ease-[cubic-bezier(.2,.7,.3,1)] group-hover:-translate-y-0.5 group-hover:scale-[1.07]"
         />
       </div>

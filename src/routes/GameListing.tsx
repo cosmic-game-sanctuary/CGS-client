@@ -1,7 +1,6 @@
 import { ArrowLeft, Flag, Star } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { CoverArt } from '@/components/CoverArt'
 import { Freehand } from '@/components/icons/Freehand'
 import { SiteFooter } from '@/components/SiteFooter'
 import { SiteHeader } from '@/components/SiteHeader'
@@ -20,10 +19,12 @@ import {
 import { cn } from '@/lib/utils'
 import { CheckoutOverlay } from '@/components/checkout/CheckoutOverlay'
 import { AgentPanel } from '@/components/listing/AgentPanel'
+import { MediaGallery } from '@/components/listing/MediaGallery'
 import { PlayOverlay } from '@/components/play/LightsDown'
 import { ReportDialog } from '@/components/listing/ReportDialog'
 import { ReviewForm } from '@/components/listing/ReviewForm'
 import { getGame, getReviews } from '@/mocks/games'
+import { mediaFor } from '@/mocks/media'
 import { useSession } from '@/mocks/session'
 import type { Game, Review } from '@/mocks/types'
 
@@ -86,14 +87,52 @@ export function GameListing() {
           Back to catalog
         </Link>
 
-        <div className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
-          {/* Cover */}
-          <div className="overflow-hidden rounded-card border-[3px] border-ink shadow-hard-lg">
-            <CoverArt seed={game.coverSeed} title={`${game.title} cover art`} />
+        {/* Two genuinely independent columns.
+            Explicit row placement was not enough: a row-spanning item still
+            contributes its height to every row it covers, so a tall right
+            column kept growing row 1 and pushing About down. Instead the left
+            wrapper is `display: contents` on mobile, where all three blocks
+            are grid items in one column ordered gallery, buy, about, and
+            becomes a real flex column at lg, where each side flows alone. */}
+        <div className="grid gap-x-8 gap-y-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)] lg:items-start">
+          <div className="contents lg:flex lg:min-w-0 lg:flex-col lg:gap-10">
+            <MediaGallery
+              items={mediaFor(game)}
+              title={game.title}
+              className="order-1 lg:order-none"
+            />
+            <section className="order-3 min-w-0 lg:order-none">
+              <h2 className="text-2xl">About</h2>
+              <div className="mt-4 flex max-w-[66ch] flex-col gap-4">
+                {game.description.split('\n\n').map((para) => (
+                  <p
+                    key={para.slice(0, 24)}
+                    className="font-body leading-relaxed"
+                  >
+                    {para}
+                  </p>
+                ))}
+              </div>
+
+              <div className="mt-8">
+                <h2 className="text-2xl">Reviews</h2>
+                <p className="mt-2 font-body text-sm text-ink-soft">
+                  Only people who own this game can post one.
+                </p>
+                {owned && !hasReviewed ? (
+                  <ReviewForm
+                    gameId={game.id}
+                    onPosted={(review) => setPosted((all) => [review, ...all])}
+                  />
+                ) : null}
+                <ReviewList reviews={reviews} />
+              </div>
+            </section>
           </div>
 
-          {/* Buy panel */}
-          <div className="flex flex-col gap-5">
+          {/* Right column: everything about buying it. Flows on its own,
+              so opening the price trigger never moves About. */}
+          <div className="order-2 flex min-w-0 flex-col gap-5 lg:order-none">
             <div>
               {game.sticker ? (
                 <Sticker className="mb-3 -rotate-2">
@@ -193,38 +232,8 @@ export function GameListing() {
                 </span>
               ))}
             </div>
-          </div>
-        </div>
 
-        {/* About + splits */}
-        <div className="mt-12 grid gap-10 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
-          <section>
-            <h2 className="text-2xl">About</h2>
-            <div className="mt-4 flex max-w-[66ch] flex-col gap-4">
-              {game.description.split('\n\n').map((para) => (
-                <p key={para.slice(0, 24)} className="font-body leading-relaxed">
-                  {para}
-                </p>
-              ))}
-            </div>
-
-            <div className="mt-8">
-              <h2 className="text-2xl">Reviews</h2>
-              <p className="mt-2 font-body text-sm text-ink-soft">
-                Only people who own this game can post one.
-              </p>
-              {owned && !hasReviewed ? (
-                <ReviewForm
-                  gameId={game.id}
-                  onPosted={(review) => setPosted((all) => [review, ...all])}
-                />
-              ) : null}
-              <ReviewList reviews={reviews} />
-            </div>
-          </section>
-
-          <aside className="flex flex-col gap-6">
-            {/* Splits — public, because buyers should see where the money goes */}
+            {/* Splits: public, because buyers should see where the money goes */}
             <section className="rounded-card border-2 border-ink bg-paper p-5 shadow-hard">
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -239,7 +248,7 @@ export function GameListing() {
                 </div>
                 <Freehand
                   name="business-deal-handshake"
-                  className="h-11 w-11 text-green"
+                  className="h-11 w-11 shrink-0 text-green"
                 />
               </div>
 
@@ -260,7 +269,7 @@ export function GameListing() {
               <Flag size={13} strokeWidth={2.5} />
               Report this game
             </button>
-          </aside>
+          </div>
         </div>
       </main>
 
@@ -295,7 +304,9 @@ function Rating({ rating, count }: { rating: number; count: number }) {
             key={n}
             size={16}
             strokeWidth={2.5}
-            className={cn(n <= rounded ? 'fill-yellow text-ink' : 'text-ink-faint')}
+            className={cn(
+              n <= rounded ? 'fill-yellow text-ink' : 'text-ink-faint',
+            )}
           />
         ))}
       </span>
@@ -354,14 +365,19 @@ function ReviewList({ reviews }: { reviews: Review[] | null }) {
               {timeAgo(review.createdAt)}
             </span>
           </div>
-          <div className="mt-2 flex gap-0.5" aria-label={`${review.rating} out of 5`}>
+          <div
+            className="mt-2 flex gap-0.5"
+            aria-label={`${review.rating} out of 5`}
+          >
             {[1, 2, 3, 4, 5].map((n) => (
               <Star
                 key={n}
                 size={13}
                 strokeWidth={2.5}
                 className={cn(
-                  n <= review.rating ? 'fill-yellow text-ink' : 'text-ink-faint',
+                  n <= review.rating
+                    ? 'fill-yellow text-ink'
+                    : 'text-ink-faint',
                 )}
               />
             ))}
@@ -381,7 +397,7 @@ function ListingLoading() {
       <SiteHeader />
       <main className="mx-auto w-full max-w-page flex-1 px-6 py-8">
         <div className="grid gap-8 lg:grid-cols-[minmax(0,1.15fr)_minmax(300px,0.85fr)]">
-          <div className="hatch aspect-4/3 rounded-card border-[3px] border-ink" />
+          <div className="hatch aspect-4/3 self-start rounded-card border-2 border-ink" />
           <div className="flex flex-col gap-4">
             <div className="hatch h-12 w-3/4 rounded-card border-2 border-ink" />
             <div className="hatch h-5 w-1/2 rounded-card border-2 border-ink" />

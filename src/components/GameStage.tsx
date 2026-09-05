@@ -1,7 +1,7 @@
 import { Maximize2, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { BuildFrame } from '@/components/BuildFrame'
-import { CoverArt } from '@/components/CoverArt'
+import { Cover } from '@/components/Cover'
 import { cn } from '@/lib/utils'
 import type { Game } from '@/mocks/types'
 
@@ -103,7 +103,7 @@ export function GameStage({
               <BuildFrame src={game.localBuildEntry} title={game.title} />
             ) : (
               <div className="relative h-full">
-                <CoverArt seed={game.coverSeed} className="h-full" />
+                <Cover game={game} className="h-full" />
                 <span className="label-micro absolute bottom-2 left-2 rounded-chip border-2 border-ink bg-paper px-2 py-0.5 text-ink">
                   Placeholder
                 </span>

@@ -5,6 +5,7 @@ import { BuildFrame } from '@/components/BuildFrame'
 import { BuildDiagnostics } from '@/components/publish/BuildStatus'
 import { CoverArt } from '@/components/CoverArt'
 import { Dropzone, type UploadedBuild } from '@/components/publish/Dropzone'
+import { MediaPicker } from '@/components/publish/MediaPicker'
 import {
   SplitEditor,
   type DraftMember,
@@ -24,7 +25,7 @@ import {
 import { cn } from '@/lib/utils'
 import { publishGame, studioById, studios, studioTeam } from '@/mocks/games'
 import { useSession } from '@/mocks/session'
-import type { Game } from '@/mocks/types'
+import type { Game, MediaItem } from '@/mocks/types'
 
 /**
  * Dev upload. Priority 2 in the brief: drag a zip → **see it playing in the
@@ -65,6 +66,9 @@ export function Publish() {
   const [coverSeed, setCoverSeed] = useState(() =>
     Math.floor(Math.random() * 64),
   )
+
+  const [media, setMedia] = useState<MediaItem[]>([])
+  const [coverId, setCoverId] = useState<string | null>(null)
 
   const [free, setFree] = useState(false)
   const [price, setPrice] = useState('3.00')
@@ -141,6 +145,8 @@ export function Publish() {
         tags: tags.length ? tags : ['unsorted'],
         priceUsd,
         coverSeed,
+        coverUrl: media.find((item) => item.id === coverId)?.url,
+        media,
         splits: members.map((member) => ({
           handle: member.label,
           role: member.role,
@@ -260,23 +266,37 @@ export function Publish() {
               </Field>
 
               <Field
-                label="Cover"
-                hint="Generated for now. Art upload lands with the backend."
+                label="Screenshots and clips"
+                hint="Images and video. Star one to make it the cover."
               >
-                <div className="flex flex-wrap items-center gap-4">
-                  <div className="w-40 overflow-hidden rounded-card border-2 border-ink shadow-hard">
-                    <CoverArt seed={coverSeed} />
-                  </div>
-                  <Button
-                    variant="neutral"
-                    size="sm"
-                    onClick={() => setCoverSeed((seed) => seed + 1)}
-                  >
-                    <Shuffle size={14} strokeWidth={2.5} />
-                    Shuffle
-                  </Button>
-                </div>
+                <MediaPicker
+                  items={media}
+                  coverId={coverId}
+                  onChange={setMedia}
+                  onPickCover={setCoverId}
+                />
               </Field>
+
+              {!coverId ? (
+                <Field
+                  label="Cover"
+                  hint="Generated until you add art of your own."
+                >
+                  <div className="flex flex-wrap items-center gap-4">
+                    <div className="w-40 overflow-hidden rounded-card border-2 border-ink shadow-hard">
+                      <CoverArt seed={coverSeed} />
+                    </div>
+                    <Button
+                      variant="neutral"
+                      size="sm"
+                      onClick={() => setCoverSeed((seed) => seed + 1)}
+                    >
+                      <Shuffle size={14} strokeWidth={2.5} />
+                      Shuffle
+                    </Button>
+                  </div>
+                </Field>
+              ) : null}
 
               <Field label="Price" hint="USDC. Free games still mint a key.">
                 <div className="flex flex-wrap items-center gap-3">
@@ -330,6 +350,8 @@ export function Publish() {
               tagline={tagline}
               tags={tags}
               coverSeed={coverSeed}
+              coverUrl={media.find((item) => item.id === coverId)?.url}
+              mediaCount={media.length}
               priceUsd={priceUsd}
               members={members}
               build={build}
@@ -529,6 +551,8 @@ function Summary({
   tagline,
   tags,
   coverSeed,
+  coverUrl,
+  mediaCount,
   priceUsd,
   members,
   build,
@@ -537,6 +561,8 @@ function Summary({
   tagline: string
   tags: string[]
   coverSeed: number
+  coverUrl?: string
+  mediaCount: number
   priceUsd: number
   members: DraftMember[]
   build: UploadedBuild | null
@@ -547,7 +573,15 @@ function Summary({
 
       <div className="flex flex-wrap gap-6">
         <div className="w-52 shrink-0 overflow-hidden rounded-card border-2 border-ink shadow-hard">
-          <CoverArt seed={coverSeed} />
+          {coverUrl ? (
+            <img
+              src={coverUrl}
+              alt=""
+              className="block aspect-4/3 w-full object-cover"
+            />
+          ) : (
+            <CoverArt seed={coverSeed} />
+          )}
         </div>
         <div className="min-w-50 flex-1">
           <h3 className="text-2xl">{title}</h3>
@@ -565,6 +599,7 @@ function Summary({
           </div>
           <p className="mt-3 font-mono text-[11px] text-ink-soft">
             {build?.name} · {((build?.sizeKb ?? 0) / 1024).toFixed(1)} MB
+            {mediaCount > 0 ? ` · ${mediaCount} media` : ''}
           </p>
         </div>
       </div>

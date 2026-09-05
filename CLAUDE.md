@@ -243,6 +243,16 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 
 _Newest first._
 
+#### 2026-09-05 (listing columns) — Suparno
+- **Fixed properly:** opening the price trigger still pushed About down. Explicit row placement was not enough, because a row-spanning grid item contributes its height to *every* row it spans, so the tall right column kept growing row 1. The left side is now `display: contents` on mobile (three grid items in one column, ordered gallery, buy, about) and a real flex column at `lg`, where each side flows on its own. Nothing on the left moves when the right grows.
+- **Note:** `npx prettier` with no config rewrote a file to double quotes and semicolons, against the rest of the codebase. Added `.prettierrc.json` (`semi: false`, `singleQuote: true`). Prettier is not a dependency; if you run it, run it from the repo root so it picks that up.
+
+#### 2026-09-05 (media, cover fix) — Suparno
+- **Fixed:** the listing cover stretched whenever the right column grew (opening the price-trigger panel), leaving a band of empty paper under the image inside its border. It was a grid row stretching the cell; the gallery is now `self-start`. Border also dropped from 3px to 2px to match everything else — 3px is reserved for the landing hero and the play surface.
+- **Did:** Screenshots and clips. `MediaGallery` on the listing (main frame plus a thumbnail strip, video supported), `MediaPicker` in publish. Files become object URLs, so real images and video genuinely display with no server. Star an image to make it the cover.
+- **New `Cover` component:** renders uploaded art when there is any, the generated riso composition otherwise. Every surface goes through it (cards, listing, library, hero, play fallback) so nothing has to know which it is.
+- **Seeded catalog games** get four derived placeholder frames from `mocks/media.ts`, so every listing has a gallery without shipping fake screenshots as assets.
+
 #### 2026-09-05 (play sequence, fullscreen, profile menu) — Suparno
 - **Did:** Extracted the lights-down wipe into `components/play/LightsDown.tsx` so **every** play runs it, not only a purchase. Owned games get their own beats (checking your key, loading build) with no payment theatre. Added a fullscreen control to `GameStage` with a one-shot "Press Esc to come back" hint. Collapsed the three nav links into a single profile menu.
 - **IA decided** (written up in §2): two pages behind the menu, one action, wallet inline. Agents folded into `/library` as "Waiting on a price", which removed the orphan page rather than adding a profile page that would have duplicated both.

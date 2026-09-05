@@ -1,4 +1,4 @@
-import { CoverArt } from '@/components/CoverArt'
+import { Cover } from '@/components/Cover'
 import { Freehand } from '@/components/icons/Freehand'
 import { PriceChip } from '@/components/ui/PriceChip'
 import { cn } from '@/lib/utils'
@@ -48,7 +48,7 @@ export function HeroCollage({ className }: { className?: string }) {
             )}
           >
             <div className="border-b-2 border-ink">
-              <CoverArt seed={game.coverSeed} />
+              <Cover game={game} />
             </div>
             <div className="flex items-center justify-between gap-1.5 px-2.5 py-2">
               <span className="truncate font-wonk text-[13px] leading-none">

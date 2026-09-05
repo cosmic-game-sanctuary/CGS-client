@@ -8,6 +8,19 @@
 
 export type StickerKind = 'new' | 'jam' | 'updated'
 
+/** A screenshot or clip on a listing. */
+export interface MediaItem {
+  id: string
+  kind: 'image' | 'video'
+  /**
+   * Object URL for a file added in this session. Absent for seeded catalog
+   * games, which fall back to a generated frame from `seed`.
+   * TODO(integration): a real URL from the media upload.
+   */
+  url?: string
+  seed?: number
+}
+
 export interface Studio {
   id: string
   /** Human name the studio chose. */
@@ -41,6 +54,10 @@ export interface Game {
   sticker?: StickerKind
   /** Deterministic seed for the generated placeholder cover art. */
   coverSeed: number
+  /** Real cover art, when the dev uploaded some. Wins over `coverSeed`. */
+  coverUrl?: string
+  /** Screenshots and clips. See `mocks/media.ts` for the fallback. */
+  media?: MediaItem[]
   publishedAt: string
   /** Public on the listing: buyers can see exactly where their money goes. */
   splits: SplitMember[]

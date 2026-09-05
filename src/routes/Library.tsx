@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
-import { CoverArt } from '@/components/CoverArt'
+import { Cover } from '@/components/Cover'
 import { Freehand } from '@/components/icons/Freehand'
 import { PriceChip } from '@/components/ui/PriceChip'
 import { SiteFooter } from '@/components/SiteFooter'
@@ -153,7 +153,7 @@ function KeyStub({
 
       <div className="min-w-0 p-4">
         <div className="h-16 w-24 overflow-hidden rounded-md border-2 border-ink">
-          <CoverArt seed={game.coverSeed} className="h-full" />
+          <Cover game={game} className="h-full" />
         </div>
         <Link
           to={`/game/${game.slug}`}
