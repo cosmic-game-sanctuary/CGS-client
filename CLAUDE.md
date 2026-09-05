@@ -136,21 +136,32 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Design language → scaffolding
-**Deps installed:** React + Vite only. Tailwind not yet installed.
-**Screens built:** none
+**Stage:** Catalog + game listing on mock data
+**Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, `@iconify-json/streamline-freehand` (dev)
+**Screens built:** catalog (`/`), game listing (`/game/:slug`)
 **Deployed:** no
 
-**Working end to end:** nothing yet — the repo is still the stock Vite template (`src/App.tsx` is the counter demo).
+**Working end to end:** browse the catalog, filter by tag, sort, toggle free-only, search, open a listing, read splits and reviews. All from `src/mocks/`. `npm run lint` and `npm run build` are both clean.
 
 **Next up:**
-1. Strip the Vite template (`App.tsx`, `App.css`, `src/assets/`, `public/icons.svg`, `public/favicon.svg`).
-2. Install Tailwind v4, add `src/styles/tokens.css` from [DESIGN.md §12](DESIGN.md), wire the Google Fonts link into `index.html`.
-3. Add the `@/*` alias in both `tsconfig.app.json` and `vite.config.ts`.
-4. Install icons: `@iconify-json/streamline-freehand`, `@iconify/react`, `lucide-react`.
-5. Build **catalog + game listing** on mock data — they exercise the game card, price chip, grid stagger and hover handling, so any flaw in the design language surfaces on day one instead of day six.
-6. Then checkout → play (the lights-down sequence), upload + splits, agent screen.
-7. Install Impeccable **after** those first screens exist, and run `/impeccable audit` per screen.
+1. **Checkout → instant play** — the lights-down sequence ([DESIGN.md §5](DESIGN.md)). Highest-value polish in the product; still on mock data.
+2. Dev upload + splits editor (drag zip → preview → price → teammates by email → publish).
+3. Studio profile, agent setup screen.
+4. Install Impeccable and run `/impeccable audit` per screen.
+5. Later, as a deliberate phase: Privy, then the API, then the x402 download path.
+
+### Layout of the repo
+
+```
+scripts/build-icons.mjs   extracts only the Freehand icons we use → src/components/icons/freehand.gen.ts
+src/styles/tokens.css     the whole design system. DESIGN.md §12 lives here.
+src/mocks/                types.ts mirrors the API contract; games.ts is the fake backend
+src/lib/                  cn(), and format.ts for every ledger value
+src/components/           CoverArt, GameCard, SplitBar, SiteHeader/Footer, icons/, ui/
+src/routes/               Catalog, GameListing
+```
+
+Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`. The script fails loudly if an icon isn't in the free set — several obvious ones aren't.
 
 ### Blockers
 
@@ -169,16 +180,37 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 | Icon strategy | Freehand large (character) + Lucide small (chrome) | The free Freehand set has no plain X, plus, chevron, check or trash — it's an illustration set, not a UI set. |
 | Build order | Whole UI on mock data before any integration | Lets the design language be validated and the screens polished without waiting on backend or Privy. |
 | Swipe discovery | In scope, not first | Pure frontend surface and a real differentiator, but it's not on the critical demo path. |
+| Routing | `react-router-dom` v7, `BrowserRouter` | Decided when the second screen landed, as planned. Nothing exotic needed. |
+| Icon delivery | Build-time extraction into `freehand.gen.ts` | `@iconify/react` fetches icon data at runtime and importing the whole set costs 2.6MB. We use ~11 icons; extracting them ships ~28KB and needs no network. |
+| Loading state | Results tagged with the query that produced them | `react-hooks` v7 forbids synchronous `setState` in an effect. Stale results read as "loading" during render instead, which also fixes the flash when filters change fast. |
+| Cover art | Deterministic generated SVG from `coverSeed` | Real art comes from devs at publish. Until then the catalog has to look intentional rather than sparse (brief, priority 3). |
 
 ### Log
 
 _Newest first._
 
+#### 2026-09-05 (review pass 2) — Suparno
+- **Did:** Logo locked to **Fold** (`DEFAULT_MARK` in `src/components/Logo.tsx`); reworked its dog-ear as a true cutout with an outlined flap so it carries no background-colour dependency, and did the same to `stub`. New favicon. Added `ScrollManager` — Router keeps scroll across navigations, which is why listings opened halfway down; it also now honours hash links, so the hero CTA actually reaches the grid. Fixed "Split 1 ways" → "One person", with matching footer copy. Replaced the hero headline.
+- **Headline:** was "Press play. That's the whole install." — cut, because instant browser play is table stakes (itch, Poki, CrazyGames all do it). Now **"The money goes where you think it goes."** The money reaching everyone who made it, immediately and split correctly, is the thing itch structurally cannot do — a ten-year-old open issue for splits, plus multi-week payout holds.
+- **Next:** Checkout → instant play.
+
+#### 2026-09-05 (review pass) — Suparno
+- **Did:** Fixed the split bar never rendering (Tailwind `scale-x-0` multiplying against the animated `transform` — written up in [DESIGN.md §4](DESIGN.md) as a trap that will recur). Rebuilt the catalog hero: new headline, yellow Tone C ground, a fanned-deck graphic built from real covers, big CTA. Removed the "What you get" panel from every listing and cut the over-explaining copy on splits, reviews and the footer. Replaced the red dot in the header with a real logo mark; added six candidate marks and a favicon.
+- **Works now:** As before, plus a hero that doesn't lead with the censorship story and a listing that states things once instead of three times.
+- **Next:** Pick a mark (six options in the artifact), then checkout → instant play.
+- **Open placeholder:** the hero's "Why we built this" button has no handler — it's for the USP modal, deliberately not built yet.
+
+#### 2026-09-05 (later) — Suparno
+- **Did:** Stripped the Vite template. Installed Tailwind v4 and wired `src/styles/tokens.css` as the single source of design values. Added the `@/*` alias to both `tsconfig.app.json` and `vite.config.ts`. Built the icon extraction script, then the primitives (Button, PriceChip, Sticker, Reveal, Freehand, CoverArt), the composites (GameCard, SplitBar, SiteHeader, SiteFooter), and the first two screens.
+- **Works now:** Catalog and game listing, fully on mock data. Filter, sort, free-only, search, empty state, loading state, 12 games, generated cover art, animated split bars, verified-purchase reviews. Lint and build clean.
+- **Next:** Checkout → instant play.
+- **Notes for the other side:** `src/mocks/types.ts` is my read of the API contract — **worth a five-minute check before I build anything else against it.** Specifically: does `GET /api/games/:id` return the split members with handles and roles, or just addresses and percentages? The listing page shows them publicly, which I think is a feature worth keeping. Also still need the x402 helper walkthrough before checkout integration.
+
 #### 2026-09-05 — Suparno
 - **Did:** Read the product docs. Landed and locked the design language (Paper Arcade) — palette, type, physics, seven-move motion system, icon strategy, tone B/C split, banlist. Wrote `DESIGN.md` and this file.
 - **Works now:** Nothing runnable beyond the stock Vite template. The design language exists as a live interactive reference artifact plus `DESIGN.md`.
 - **Next:** Strip the template, install Tailwind v4 + tokens + fonts + icons, then catalog and game listing on mock data.
-- **Notes for the other side:** None yet. Will need the x402 helper walkthrough before checkout integration, and confirmation of the `/api/games` response shape before mock fixtures get locked to it.
+- **Notes for the other side:** None yet.
 
 ---
 

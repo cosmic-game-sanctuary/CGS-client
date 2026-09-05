@@ -156,6 +156,12 @@ This is the rule that separates designed from generated. Hovering a game card mo
 
 A single uniform scale-up is the tell that someone animated a box instead of an object. Same principle on the GameKey stub (halves separate at the perforation, key rotates `-32°`), the palette swatches (plate shifts off register), and the agent panel.
 
+### Tailwind trap: `scale-*` vs `transform`
+
+Tailwind v4's `scale-*`, `rotate-*` and `translate-*` utilities compile to the **standalone** `scale` / `rotate` / `translate` CSS properties, which *multiply* with any `transform` a keyframe animates. So `scale-x-0` as the base state of a `Grow` animation pins the element at zero width permanently and the bar never appears.
+
+**Set the base state of an animated element with `transform`, in a real CSS class** — see `.split-seg` in `src/styles/tokens.css`. This applies anywhere a keyframe here animates `transform`, which is most of them.
+
 ### Motion discipline
 
 - **One ambient loop, and the agent owns it.** Everywhere else, idle means still. A page that twitches while you read it is a page nobody trusts with money.

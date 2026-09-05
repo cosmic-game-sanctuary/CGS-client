@@ -1,0 +1,255 @@
+@import "tailwindcss";
+
+/* ─────────────────────────────────────────────────────────────
+   Paper Arcade — design tokens.  Spec: ../../DESIGN.md
+   No magic numbers in components. If a value isn't here, add it
+   here first.
+   ───────────────────────────────────────────────────────────── */
+
+@theme {
+  /* ── ground & ink ── */
+  --color-paper: #fbf3e2;
+  --color-paper-sunk: #f1e5cc;
+  --color-paper-deep: #e7d8b8;
+  --color-ink: #16130f;
+  --color-ink-soft: #6b6154;
+  --color-ink-faint: #a79b86;
+  --color-night: #14110d;
+
+  /* ── riso inks — semantic, one job each. DESIGN.md §1 ── */
+  --color-red: #f15060; /* act now       */
+  --color-green: #00a95c; /* money settled */
+  --color-blue: #0078bf; /* the agent     */
+  --color-yellow: #ffe800; /* marker        */
+  --color-pink: #ff48b0; /* attention     */
+
+  /* ── type ── */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Public Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Martian Mono", ui-monospace, monospace;
+
+  /* ── layout ── */
+  --container-page: 1180px;
+
+  /* ── physics ── */
+  --radius-card: 10px;
+  --radius-chip: 999px;
+
+  --shadow-hard-sm: 2px 2px 0 #16130f;
+  --shadow-hard: 4px 4px 0 #16130f;
+  --shadow-hard-lg: 6px 6px 0 #16130f;
+
+  --ease-land: cubic-bezier(0.18, 0.85, 0.32, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── motion — the seven named moves. DESIGN.md §4 ── */
+  --animate-stamp: stamp 0.5s var(--ease-land) backwards;
+  --animate-grow: grow 0.55s var(--ease-land) forwards;
+  --animate-print: printrow 0.3s ease-out forwards;
+  --animate-sweep: sweep 3.2s linear infinite;
+  --animate-ping-ring: ping-ring 2.6s ease-out infinite;
+  --animate-wobble: wobble 0.5s ease-in-out;
+
+  @keyframes stamp {
+    0% {
+      opacity: 0;
+      transform: translateY(-12px) scale(1.055);
+    }
+    55% {
+      opacity: 1;
+      transform: translateY(2px) scale(0.995);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+  @keyframes grow {
+    from {
+      transform: scaleX(0);
+    }
+    to {
+      transform: scaleX(1);
+    }
+  }
+  @keyframes printrow {
+    0% {
+      opacity: 0;
+      transform: translateY(-7px);
+      clip-path: inset(0 0 100% 0);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+      clip-path: inset(0 0 0 0);
+    }
+  }
+  @keyframes sweep {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @keyframes ping-ring {
+    0% {
+      transform: scale(0.45);
+      opacity: 0.65;
+    }
+    100% {
+      transform: scale(2);
+      opacity: 0;
+    }
+  }
+  @keyframes wobble {
+    0%,
+    100% {
+      transform: rotate(0);
+    }
+    30% {
+      transform: rotate(-6deg);
+    }
+    70% {
+      transform: rotate(6deg);
+    }
+  }
+}
+
+@layer base {
+  html {
+    font-family: var(--font-body);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-paper);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+  }
+
+  /* paper grain — one fixed element, 5.5% */
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.055;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    /* non-negotiable — without the axes this is a different, duller face. §2 */
+    font-variation-settings: "SOFT" 100, "WONK" 1;
+    line-height: 1.05;
+    text-wrap: balance;
+    margin: 0;
+  }
+
+  p {
+    margin: 0;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--color-blue);
+    outline-offset: 3px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation: none !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer components {
+  /* ── Deal: staggered entry. DESIGN.md §4 ──
+     Children carry their own `--i` index from the call site. The container
+     flips to data-shown="true" on first intersection and never again. */
+  [data-reveal] > * {
+    opacity: 0;
+  }
+  [data-reveal][data-shown="true"] > * {
+    opacity: 1;
+    animation: stamp 0.5s var(--ease-land) backwards;
+    animation-delay: calc(var(--i, 0) * 70ms);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-reveal] > * {
+      opacity: 1 !important;
+    }
+  }
+
+  /* ── Grow: split-bar segments. DESIGN.md §4 ──
+     Base state must be set with `transform`, NOT Tailwind's `scale-x-0`.
+     Tailwind v4 scale-* utilities compile to the standalone `scale` property,
+     which *multiplies* with the `transform` these keyframes animate — so
+     `scale-x-0` pins the element at zero width for good and the bar never
+     appears. Same trap applies anywhere a keyframe animates `transform`. */
+  .split-seg {
+    transform: scaleX(0);
+    transform-origin: left center;
+  }
+  .split-seg[data-shown="true"] {
+    animation: grow 0.55s var(--ease-land) forwards;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .split-seg {
+      transform: scaleX(1);
+    }
+  }
+}
+
+@layer utilities {
+  /* Display face with the wonk, for elements that aren't headings
+     (buttons, card titles, prices in display context). */
+  .font-wonk {
+    font-family: var(--font-display);
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    font-variation-settings: "SOFT" 100, "WONK" 1;
+  }
+
+  /* Micro label — Martian Mono is wide, so 10px / .08em, not 11 / .16. §2 */
+  .label-micro {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.3;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* Ledger values: mono + aligned digits. §2 */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Marker highlight — the one decorative flourish. */
+  .mark {
+    background: linear-gradient(var(--color-yellow), var(--color-yellow));
+    background-size: 100% 0.62em;
+    background-repeat: no-repeat;
+    background-position: 0 0.72em;
+    padding: 0 0.12em;
+  }
+
+  /* Hatched placeholder — replaces skeleton shimmer. §8 */
+  .hatch {
+    background-image: repeating-linear-gradient(
+      -45deg,
+      var(--color-paper-deep) 0 6px,
+      var(--color-paper-sunk) 6px 12px
+    );
+  }
+}
