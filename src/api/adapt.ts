@@ -65,6 +65,7 @@ export function adaptGame(wire: WireGame): Game {
     description: wire.description,
     studio: adaptStudioRef(wire.studio),
     priceUsd: wire.priceUsd,
+    priceUnits: wire.priceUnits,
     tags: wire.tags,
     sticker: stickerFor(wire.publishedAt),
     coverSeed: wire.coverSeed,

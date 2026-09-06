@@ -7,6 +7,13 @@
 import { notify } from './notifications'
 import type { CatalogQuery, Game, MediaItem, Review, Studio } from './types'
 
+/**
+ * USDC has six decimals, which is a fact these fixtures are allowed to know
+ * and the app is not. Everywhere else it comes from the server, on the game or
+ * on `/api/me`, because the settlement asset is configuration, not a constant.
+ */
+const usdToUnits = (usd: number) => Math.round(usd * 1_000_000)
+
 const LATENCY_MS = 320
 
 function delay<T>(value: T, ms = LATENCY_MS): Promise<T> {
@@ -73,6 +80,7 @@ export const games: Game[] = [
       'A one-button descent into a mine that keeps getting deeper than it should. Every run reshuffles the tunnels, and the lantern only lasts so long. Built in nine days for a jam about verticality, then finished properly because we could not stop playing it.\n\nNo save files, no meta-progression, no currency. You go down, you come back up, or you do not.',
     studio: studios.tinroof,
     priceUsd: 3,
+    priceUnits: 3000000,
     tags: ['roguelike', 'atmospheric', 'one-button'],
     sticker: 'new',
     coverSeed: 11,
@@ -96,6 +104,7 @@ export const games: Game[] = [
       'A short walking game with no combat and no fail state. You are a small tin figure crossing a red country toward a house you may have invented. Takes about twenty minutes. Play it with sound on.\n\nFree because the first one should be.',
     studio: studios.smallhours,
     priceUsd: 0,
+    priceUnits: 0,
     tags: ['narrative', 'short', 'no-fail'],
     coverSeed: 2,
     publishedAt: '2026-08-28T14:30:00Z',
@@ -117,6 +126,7 @@ export const games: Game[] = [
       'A slow builder about coaxing life back onto a hulk in orbit. Place moss, wait, place more. There is no threat and no timer; the only pressure is that the station keeps drifting further from the sun.\n\nMade by five people who have never been in the same room.',
     studio: studios.moss,
     priceUsd: 1.8,
+    priceUnits: 1800000,
     tags: ['builder', 'idle', 'cozy'],
     sticker: 'updated',
     coverSeed: 5,
@@ -141,6 +151,7 @@ export const games: Game[] = [
       'An origami sailing game with real fluid simulation and absolutely no tutorial. Fold your hull between crossings; every crease you add costs you somewhere else.\n\nRuns at 60fps in a browser tab on a five-year-old laptop, which took longer than the game did.',
     studio: studios.driftco,
     priceUsd: 5,
+    priceUnits: 5000000,
     tags: ['physics', 'sailing', 'no-tutorial'],
     coverSeed: 8,
     publishedAt: '2026-08-11T16:45:00Z',
@@ -164,6 +175,7 @@ export const games: Game[] = [
       'A conversation game set on a night bus that never quite arrives. Eleven passengers, one route, and a driver who will answer exactly one question. Branching is small and deliberate; you will see most of it in two runs.',
     studio: studios.paperlung,
     priceUsd: 2.5,
+    priceUnits: 2500000,
     tags: ['narrative', 'dialogue', 'short'],
     coverSeed: 14,
     publishedAt: '2026-08-04T08:20:00Z',
@@ -182,6 +194,7 @@ export const games: Game[] = [
       'Land-speed racing reduced to its only interesting decision: when to lift. One track, one car, one minute per attempt, and a leaderboard that resets every Sunday.',
     studio: studios.brightsalt,
     priceUsd: 1.5,
+    priceUnits: 1500000,
     tags: ['racing', 'arcade', 'leaderboard'],
     sticker: 'jam',
     coverSeed: 3,
@@ -204,6 +217,7 @@ export const games: Game[] = [
       'Forty rooms, no words. Each room introduces one rule and then immediately tests whether you actually learned it. The last ten rooms are genuinely hard and we are not sorry.',
     studio: studios.paperlung,
     priceUsd: 4,
+    priceUnits: 4000000,
     tags: ['puzzle', 'wordless', 'hard'],
     coverSeed: 6,
     publishedAt: '2026-07-22T10:10:00Z',
@@ -222,6 +236,7 @@ export const games: Game[] = [
       'Part gardener, part cartographer. You plant the maze and then have to find your way back through it from memory. Autumn arrives on turn forty and takes the leaves with it.',
     studio: studios.moss,
     priceUsd: 0,
+    priceUnits: 0,
     tags: ['strategy', 'cozy', 'seasonal'],
     coverSeed: 9,
     publishedAt: '2026-07-14T12:00:00Z',
@@ -243,6 +258,7 @@ export const games: Game[] = [
       'A climbing game about route-reading rather than reflexes. Pick a line, commit, and find out whether the weather agrees with you. Every ascent is timed but nothing is a race.',
     studio: studios.driftco,
     priceUsd: 3.5,
+    priceUnits: 3500000,
     tags: ['climbing', 'simulation', 'weather'],
     coverSeed: 12,
     publishedAt: '2026-07-02T15:40:00Z',
@@ -265,6 +281,7 @@ export const games: Game[] = [
       'Manage a city tram network in which each route is a minor deity with opinions about punctuality. Keep them happy, keep them running, or watch the timetable become mythology.',
     studio: studios.brightsalt,
     priceUsd: 6,
+    priceUnits: 6000000,
     tags: ['management', 'comedy', 'city'],
     coverSeed: 1,
     publishedAt: '2026-06-25T09:30:00Z',
@@ -287,6 +304,7 @@ export const games: Game[] = [
       'A breath-holding descent with no enemies and one rule: you must always be able to get back. Procedural kelp, real caustics, and a pressure gauge that is the entire UI.',
     studio: studios.smallhours,
     priceUsd: 2,
+    priceUnits: 2000000,
     tags: ['atmospheric', 'diving', 'minimal-ui'],
     coverSeed: 4,
     publishedAt: '2026-06-16T18:00:00Z',
@@ -308,6 +326,7 @@ export const games: Game[] = [
       'Deckbuilder where every card you play is added to your opponent’s deck for the next round. Nine rounds, escalating, and by round seven you are losing to your own best ideas.',
     studio: studios.tinroof,
     priceUsd: 4.5,
+    priceUnits: 4500000,
     tags: ['deckbuilder', 'strategy', 'roguelike'],
     coverSeed: 7,
     publishedAt: '2026-06-08T11:00:00Z',
@@ -584,6 +603,7 @@ export async function publishGame(
     description: draft.description,
     studio,
     priceUsd: draft.priceUsd,
+    priceUnits: usdToUnits(draft.priceUsd),
     tags: draft.tags,
     sticker: 'new',
     coverSeed: draft.coverSeed,

@@ -23,6 +23,10 @@ export type ApiErrorCode =
   | 'VALIDATION_FAILED'
   | 'SPLITS_LOCKED'
   | 'PAYMENT_REQUIRED'
+  | 'PAYMENT_FAILED'
+  /** The frozen transaction aged out before it settled. Nothing was charged. */
+  | 'PAYMENT_INTENT_EXPIRED'
+  | 'PAYMENT_SIGNATURE_INVALID'
   | 'RATE_LIMITED'
   | 'INTERNAL'
   | 'NETWORK'
@@ -130,6 +134,69 @@ export async function request<T>(
   }
 
   return payload as T
+}
+
+/**
+ * A binary body, with the same auth and the same errors as `request`.
+ *
+ * Separate because everything else here is JSON, and a build zip is tens of
+ * megabytes: parsing it as text first would double the memory for no reason.
+ * `onProgress` reports bytes as they land where the server said how many to
+ * expect, so a slow download reads as progress rather than as a stall.
+ */
+export async function requestBytes(
+  path: string,
+  options: RequestOptions & { onProgress?: (loaded: number, total: number) => void } = {},
+): Promise<ArrayBuffer> {
+  const { query, anonymous, signal, onProgress } = options
+
+  const headers: Record<string, string> = {}
+  if (!anonymous) {
+    const token = await getToken()
+    if (token) headers.Authorization = `Bearer ${token}`
+  }
+
+  let response: Response
+  try {
+    response = await fetch(buildUrl(path, query), { headers, signal })
+  } catch (cause) {
+    if (signal?.aborted) throw cause
+    throw new ApiError(0, 'NETWORK', 'Could not reach the server. Is it running?')
+  }
+
+  if (!response.ok) {
+    const payload = safeParse(await response.text()) as
+      | { error?: { code?: string; message?: string; details?: unknown } }
+      | undefined
+    throw new ApiError(
+      response.status,
+      payload?.error?.code ?? 'INTERNAL',
+      payload?.error?.message ?? `Request failed (${response.status}).`,
+      payload?.error?.details,
+    )
+  }
+
+  const total = Number(response.headers.get('content-length') ?? 0)
+  if (!onProgress || !response.body || !total) return response.arrayBuffer()
+
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let loaded = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    chunks.push(value)
+    loaded += value.length
+    onProgress(loaded, total)
+  }
+
+  const out = new Uint8Array(loaded)
+  let offset = 0
+  for (const chunk of chunks) {
+    out.set(chunk, offset)
+    offset += chunk.length
+  }
+  return out.buffer
 }
 
 /** What to put on screen when a call fails. Server copy wins when there is any. */

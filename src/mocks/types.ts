@@ -53,8 +53,17 @@ export interface Game {
   tagline: string
   description: string
   studio: Studio
-  /** USDC. `0` means free — free games still mint a GameKey. */
+  /** USDC, for display. `0` means free — free games still mint a GameKey. */
   priceUsd: number
+  /**
+   * The same price as an integer, in the asset's smallest units.
+   *
+   * Anything that compares or adds money uses this. `priceUsd` is a float and
+   * a wallet holding exactly the price of a game is the case where comparing
+   * floats decides wrong, which is a buyer being asked to top up a wallet that
+   * already has enough in it.
+   */
+  priceUnits: number
   tags: string[]
   sticker?: StickerKind
   /** Deterministic seed for the generated placeholder cover art. */

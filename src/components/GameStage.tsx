@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { BuildFrame } from '@/components/BuildFrame'
 import { Cover } from '@/components/Cover'
 import { cn } from '@/lib/utils'
+import { endSession, startSession } from '@/api/purchase'
 import type { Game } from '@/mocks/types'
 
 /**
@@ -11,19 +12,26 @@ import type { Game } from '@/mocks/types'
  * Deliberately inverted: paper-coloured chrome on an ink ground, so crossing
  * from the store into the game is felt rather than announced.
  *
- * ── The seam ──────────────────────────────────────────────────────────────
- * A game published in this session runs for real, through `BuildFrame`.
- * Anything from the seeded catalog has no build, so it falls back to its cover.
- * TODO(integration): fetch the CID through the x402 download and mount it the
- * same way, and this distinction disappears.
+ * ── Where the build comes from ────────────────────────────────────────────
+ * `playUrl` is the pinned build, fetched through the x402 download by whoever
+ * opened this. `localBuildEntry` is a zip unpacked in this browser, which is
+ * how the publish flow shows a dev their own game before it exists anywhere
+ * else. The placeholder is neither, and now means what it says: there is no
+ * build to run.
+ *
+ * The two URLs are on different origins and that is deliberate for the same
+ * reason in both cases. See BuildFrame.
  */
 export function GameStage({
   game,
+  playUrl,
   onExit,
   children,
   className,
 }: {
   game: Game
+  /** Absolute URL of the build's entry point, once something has fetched one. */
+  playUrl?: string | null
   onExit?: () => void
   children?: ReactNode
   className?: string
@@ -31,6 +39,29 @@ export function GameStage({
   const frameRef = useRef<HTMLDivElement>(null)
   const [isFull, setIsFull] = useState(false)
   const [showHint, setShowHint] = useState(false)
+
+  // The build actually running, whichever it is. A local one wins: it is the
+  // dev's own unpublished zip, and it is the only reason they opened this.
+  const src = game.localBuildEntry ?? playUrl ?? null
+
+  // A play is counted where the frame mounts, which is the only place that
+  // knows a game really started. Fire and forget in both directions: a missed
+  // count is a wrong number on a listing, never a game that won't run.
+  useEffect(() => {
+    if (!src) return
+    let sessionId: string | null = null
+    let ended = false
+
+    void startSession(game.id).then((id) => {
+      sessionId = id
+      if (ended && id) void endSession(game.id, id)
+    })
+
+    return () => {
+      ended = true
+      if (sessionId) void endSession(game.id, sessionId)
+    }
+  }, [game.id, src])
 
   useEffect(() => {
     function onChange() {
@@ -99,13 +130,13 @@ export function GameStage({
           )}
         >
           {children ??
-            (game.localBuildEntry ? (
-              <BuildFrame src={game.localBuildEntry} title={game.title} />
+            (src ? (
+              <BuildFrame src={src} title={game.title} />
             ) : (
               <div className="relative h-full">
                 <Cover game={game} className="h-full" />
                 <span className="label-micro absolute bottom-2 left-2 rounded-chip border-2 border-ink bg-paper px-2 py-0.5 text-ink">
-                  Placeholder
+                  No build
                 </span>
               </div>
             ))}

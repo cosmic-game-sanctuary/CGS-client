@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/Button'
 import { PriceChip } from '@/components/ui/PriceChip'
 import { formatPrice } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { errorMessage } from '@/lib/api'
+import { buyGame, mountGrant, waitForKey, type AccessGrant } from '@/api/purchase'
+import { useWalletSigner } from '@/auth/useWalletSigner'
 import { fund, grantKey, signIn, useSession } from '@/auth/session'
 import type { Game } from '@/mocks/types'
 
@@ -18,10 +21,11 @@ import type { Game } from '@/mocks/types'
  *
  * The lights-down wipe (DESIGN.md §5) starts the moment payment is submitted
  * and covers the settlement wait, so the latency reads as staging rather than
- * as a spinner. Beat timings come straight from the spec.
+ * as a spinner. The beats wait on the real payment now, so the shutter cannot
+ * come up on a game that hasn't been bought.
  *
- * No Privy, no chain, no x402 — every step is faked in `@/auth/session`.
- * The seams are marked TODO(integration).
+ * Real money from here down. The payment is an x402 settlement on Hedera,
+ * signed by the buyer's own wallet in this tab. See `api/purchase.ts`.
  */
 
 type Phase = 'signin' | 'funding' | 'confirm' | 'paying'
@@ -39,14 +43,28 @@ export function CheckoutOverlay({
   onClose: () => void
 }) {
   const session = useSession()
+  const wallet = useWalletSigner()
 
-  const [phase, setPhase] = useState<Phase>(() => {
-    if (!session.signedIn) return 'signin'
-    if (session.balanceUsd < game.priceUsd) return 'funding'
-    return 'confirm'
-  })
-  const [email, setEmail] = useState('')
+  // Sticky, because it is the only step you can't leave. Everything before it
+  // is derived from the session instead of stored, so signing in or funding in
+  // another tab moves the panel on rather than stranding it on a step that is
+  // already done. Holding `phase` in state is what made the panel sit on "sign
+  // in" after Privy's modal had already signed you in.
+  const [paying, setPaying] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const [playUrl, setPlayUrl] = useState<string | null>(null)
+
+  // Compared in integer units, never in dollars. A wallet holding exactly the
+  // price of a game is where a float comparison decides wrong, and getting it
+  // wrong means asking someone to top up a wallet that can already pay.
+  const phase: Phase = paying
+    ? 'paying'
+    : !session.signedIn
+      ? 'signin'
+      : session.balanceUnits < game.priceUnits
+        ? 'funding'
+        : 'confirm'
 
   const timers = useRef<number[]>([])
   const panelRef = useRef<HTMLDivElement>(null)
@@ -54,7 +72,32 @@ export function CheckoutOverlay({
   const lightsDown = phase === 'paying'
   const dismissable = !lightsDown
 
-  const beats = useMemo(() => PURCHASE_BEATS(() => grantKey(game.id)), [game.id])
+  const beats = useMemo(() => {
+    // What paying produced, handed to the beat that boots it. Made here so it
+    // belongs to this sequence: nothing renders from it, and it only has to
+    // survive between two steps of one run.
+    const held: { grant: AccessGrant | null } = { grant: null }
+
+    return PURCHASE_BEATS({
+      // The whole purchase: build the transfer, sign it here, settle it there.
+      // The beat waits on this, so "Paying" lasts exactly as long as paying
+      // does, and the shutter cannot come up on a game nobody bought.
+      pay: async () => {
+        held.grant = await buyGame(game.id, wallet.signHashes)
+      },
+      // Settlement has happened, so the buyer owns this whether or not the key
+      // has minted. Say so locally now; the poll replaces it with the server's
+      // answer when the GameKey lands, a few seconds later.
+      minted: () => {
+        grantKey(game.id)
+        void waitForKey(game.id, () => grantKey(game.id))
+      },
+      boot: async (report) => {
+        if (!held.grant) throw new Error('The purchase went through but the build didn’t.')
+        setPlayUrl(await mountGrant(held.grant, report))
+      },
+    })
+  }, [game.id, wallet.signHashes])
 
   // Clear any in-flight beat timers if the overlay goes away mid-sequence.
   useEffect(() => {
@@ -86,35 +129,31 @@ export function CheckoutOverlay({
     panelRef.current?.focus()
   }, [])
 
-  function after(ms: number, run: () => void) {
-    timers.current.push(window.setTimeout(run, ms))
-  }
-
+  // Privy owns the whole login flow, including which methods are offered, so
+  // there is nothing to collect here first. The panel moves on by itself when
+  // the session changes.
   function handleSignIn() {
-    if (!email.trim()) return
-    setBusy(true)
-    // TODO(integration): Privy email login, embedded wallet created on login.
-    after(600, () => {
-      signIn()
-      setBusy(false)
-      setPhase(game.priceUsd > 0 ? 'funding' : 'confirm')
-    })
+    setProblem(null)
+    signIn()
   }
 
-  function handleFund(amount: number) {
+  async function handleFund(amount: number) {
     setBusy(true)
-    // TODO(integration): Privy's built-in funding flow.
-    after(850, () => {
-      void fund(amount)
+    setProblem(null)
+    try {
+      // TODO(integration): Privy's own funding UI replaces the dev faucet
+      // before any deploy. Same call site either way.
+      await fund(amount)
+    } catch (error) {
+      setProblem(errorMessage(error))
+    } finally {
       setBusy(false)
-      setPhase('confirm')
-    })
+    }
   }
 
   function handlePay() {
-    // TODO(integration): this is the x402 path — request the download, get a
-    // 402 with payment requirements, sign, retry. Kai supplies the helper.
-    setPhase('paying')
+    setProblem(null)
+    setPaying(true)
   }
 
   const shortfall = Math.max(0, game.priceUsd - session.balanceUsd)
@@ -171,30 +210,13 @@ export function CheckoutOverlay({
                   Email only. We make the wallet for you, so there&rsquo;s no
                   extension to install and no phrase to write down.
                 </p>
-                <label
-                  htmlFor="checkout-email"
-                  className="label-micro mt-5 block text-ink-soft"
-                >
-                  Email
-                </label>
-                <input
-                  id="checkout-email"
-                  type="email"
-                  autoFocus
-                  value={email}
-                  onChange={(event) => setEmail(event.target.value)}
-                  onKeyDown={(event) => event.key === 'Enter' && handleSignIn()}
-                  placeholder="you@example.com"
-                  className="mt-1.5 w-full rounded-card border-2 border-ink bg-paper px-3.5 py-2.5 font-body text-base text-ink outline-none placeholder:text-ink-faint focus:shadow-hard-sm"
-                />
                 <Button
                   variant="primary"
                   size="lg"
-                  className="mt-4 w-full"
-                  disabled={busy || !email.trim()}
+                  className="mt-5 w-full"
                   onClick={handleSignIn}
                 >
-                  {busy ? 'Signing in…' : 'Continue'}
+                  Continue with email
                 </Button>
               </>
             ) : phase === 'funding' ? (
@@ -229,7 +251,7 @@ export function CheckoutOverlay({
                   size="lg"
                   className="mt-4 w-full"
                   disabled={busy}
-                  onClick={() => handleFund(topUp)}
+                  onClick={() => void handleFund(topUp)}
                 >
                   {busy ? 'Adding…' : `Add ${formatPrice(topUp)}`}
                 </Button>
@@ -261,6 +283,7 @@ export function CheckoutOverlay({
                   variant="primary"
                   size="lg"
                   className="mt-4 w-full"
+                  disabled={!wallet.ready}
                   onClick={handlePay}
                 >
                   {game.priceUsd === 0
@@ -272,6 +295,15 @@ export function CheckoutOverlay({
                 </p>
               </>
             )}
+
+            {problem ? (
+              <p
+                role="alert"
+                className="mt-4 rounded-card border-2 border-red bg-paper-sunk px-3.5 py-2.5 font-body text-sm leading-relaxed text-ink"
+              >
+                {problem}
+              </p>
+            ) : null}
           </div>
         </div>
       </div>
@@ -281,6 +313,7 @@ export function CheckoutOverlay({
         game={game}
         beats={beats}
         active={lightsDown}
+        playUrl={playUrl}
         onExit={onClose}
       />
     </div>
