@@ -23,7 +23,7 @@ import { MediaGallery } from '@/components/listing/MediaGallery'
 import { PlayOverlay } from '@/components/play/LightsDown'
 import { ReportDialog } from '@/components/listing/ReportDialog'
 import { ReviewForm } from '@/components/listing/ReviewForm'
-import { getGame, getReviews } from '@/mocks/games'
+import { getGameWithState, getReviews } from '@/api/games'
 import { mediaFor } from '@/mocks/media'
 import { useSession } from '@/mocks/session'
 import type { Game, Review } from '@/mocks/types'
@@ -40,6 +40,8 @@ export function GameListing() {
   const [loaded, setLoaded] = useState<{
     slug: string
     game: Game | undefined
+    /** Authoritative, from the server's Mirror Node check. */
+    owned: boolean
   } | null>(null)
   const [loadedReviews, setLoadedReviews] = useState<{
     gameId: string
@@ -47,32 +49,42 @@ export function GameListing() {
   } | null>(null)
 
   useEffect(() => {
-    let live = true
-    getGame(slug).then((found) => {
-      if (!live) return
-      setLoaded({ slug, game: found })
-      if (!found) return
-      getReviews(found.id).then((reviews) => {
-        if (live) setLoadedReviews({ gameId: found.id, reviews })
+    const controller = new AbortController()
+    getGameWithState(slug, controller.signal)
+      .then((found) => {
+        setLoaded({ slug, game: found?.game, owned: found?.owned ?? false })
+        if (!found) return
+        return getReviews(found.game.id, controller.signal).then((reviews) =>
+          setLoadedReviews({ gameId: found.game.id, reviews }),
+        )
       })
-    })
-    return () => {
-      live = false
-    }
-  }, [slug])
+      .catch(() => {
+        if (controller.signal.aborted) return
+        // A failed load and a missing game land on the same screen: from here
+        // the game is not available, and which of the two it was is not
+        // something the reader can act on differently.
+        setLoaded({ slug, game: undefined, owned: false })
+      })
+    return () => controller.abort()
+    // `signedIn` is here because `owned` only comes back with a token, so
+    // signing in has to re-ask rather than leave the buy box stale.
+  }, [slug, session.signedIn])
 
-  // null = still loading, undefined = no such game
-  const game = loaded?.slug === slug ? loaded.game : null
+  // null = still loading, undefined game = no such game
+  const current = loaded?.slug === slug ? loaded : null
 
-  if (game === null) return <ListingLoading />
-  if (game === undefined) return <ListingNotFound />
+  if (current === null) return <ListingLoading />
+  if (current.game === undefined) return <ListingNotFound />
+  const game = current.game
 
   const fetched =
     loadedReviews?.gameId === game.id ? loadedReviews.reviews : null
   const reviews = fetched ? [...posted, ...fetched] : null
   const hasReviewed = posted.length > 0
 
-  const owned = session.ownedGameIds.includes(game.id)
+  // The server checks the chain; the session store is a local optimism that
+  // exists so a fresh purchase shows as owned before the next fetch lands.
+  const owned = current.owned || session.ownedGameIds.includes(game.id)
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -161,11 +173,13 @@ export function GameListing() {
                   address: game.studio.address,
                 })}
               </Link>
-              <span className="font-mono text-[11px] text-ink-soft">
-                {game.studio.memberCount === 1
-                  ? '1 person'
-                  : `${game.studio.memberCount} people`}
-              </span>
+              {game.studio.memberCount > 0 ? (
+                <span className="font-mono text-[11px] text-ink-soft">
+                  {game.studio.memberCount === 1
+                    ? '1 person'
+                    : `${game.studio.memberCount} people`}
+                </span>
+              ) : null}
             </div>
 
             <Rating rating={game.rating} count={game.reviewCount} />

@@ -9,7 +9,8 @@ import { ButtonLink } from '@/components/ui/Button'
 import { Reveal } from '@/components/ui/Reveal'
 import { Sticker } from '@/components/ui/Sticker'
 import { compactCount, formatDate, truncateAddress } from '@/lib/format'
-import { getStudio, listGamesByStudio, studioCredits } from '@/mocks/games'
+import { getStudio, listGamesByStudio } from '@/api/games'
+import { studioCredits } from '@/lib/credits'
 import { useSession } from '@/mocks/session'
 import type { Game, Studio as StudioType } from '@/mocks/types'
 
@@ -30,15 +31,26 @@ export function Studio() {
   } | null>(null)
 
   useEffect(() => {
-    let live = true
-    Promise.all([getStudio(id), listGamesByStudio(id)]).then(
-      ([studio, games]) => {
-        if (live) setLoaded({ id, studio, games })
-      },
-    )
-    return () => {
-      live = false
-    }
+    const controller = new AbortController()
+    getStudio(id, controller.signal)
+      .then(async (profile) => {
+        if (!profile) {
+          setLoaded({ id, studio: undefined, games: [] })
+          return
+        }
+        // The studio route answers by slug too, so the id in the URL may not
+        // be the one games are filtered by. Use the resolved one.
+        const games = await listGamesByStudio(
+          profile.studio.id,
+          controller.signal,
+        )
+        setLoaded({ id, studio: profile.studio, games })
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return
+        setLoaded({ id, studio: undefined, games: [] })
+      })
+    return () => controller.abort()
   }, [id])
 
   const ready = loaded?.id === id ? loaded : null
@@ -85,12 +97,14 @@ export function Studio() {
                     {studio.ens}
                   </span>
                 ) : null}
-                <span
-                  className="font-mono text-[11px] text-ink-soft"
-                  title={studio.address}
-                >
-                  {truncateAddress(studio.address)}
-                </span>
+                {studio.address ? (
+                  <span
+                    className="font-mono text-[11px] text-ink-soft"
+                    title={studio.address}
+                  >
+                    {truncateAddress(studio.address)}
+                  </span>
+                ) : null}
               </div>
 
               {studio.bio ? (

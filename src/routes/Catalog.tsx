@@ -8,7 +8,9 @@ import { SiteHeader } from '@/components/SiteHeader'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { Reveal } from '@/components/ui/Reveal'
 import { cn } from '@/lib/utils'
-import { allTags, listGames } from '@/mocks/games'
+import { errorMessage } from '@/lib/api'
+import { useDebounced } from '@/lib/useDebounced'
+import { listGames, tagsFrom } from '@/api/games'
 import type { Game, SortKey } from '@/mocks/types'
 
 const SORTS: Array<{ key: SortKey; label: string }> = [
@@ -24,27 +26,52 @@ export function Catalog() {
   const [sort, setSort] = useState<SortKey>('newest')
   const [freeOnly, setFreeOnly] = useState(false)
   const [whyOpen, setWhyOpen] = useState(false)
+  // The unfiltered catalog, read once. Two things need the shape of the whole
+  // store rather than the current results: the tag row, which would otherwise
+  // shrink to whatever you already filtered by, and the hero fan.
+  const [base, setBase] = useState<Game[] | null>(null)
   // Results are tagged with the query that produced them. Anything stale reads
   // as "still loading" during render, so the effect never has to setState
-  // synchronously to clear the old list.
-  const [result, setResult] = useState<{ key: string; games: Game[] } | null>(
-    null,
-  )
+  // synchronously to clear the old list. A failure rides along in the same
+  // object for the same reason.
+  const [result, setResult] = useState<{
+    key: string
+    games: Game[]
+    error: string | null
+  } | null>(null)
 
-  const tags = useMemo(() => allTags().slice(0, 9), [])
-  const queryKey = JSON.stringify({ search, tag, sort, freeOnly })
+  // One request when typing settles, not one per keystroke. The catalog used
+  // to filter an array in memory, where that cost nothing.
+  const settledSearch = useDebounced(search)
+  const queryKey = JSON.stringify({ search: settledSearch, tag, sort, freeOnly })
 
   useEffect(() => {
-    let live = true
-    listGames({ search, tag, sort, freeOnly }).then((games) => {
-      if (live) setResult({ key: queryKey, games })
-    })
-    return () => {
-      live = false
-    }
-  }, [queryKey, search, tag, sort, freeOnly])
+    const controller = new AbortController()
+    listGames(
+      { search: settledSearch, tag, sort, freeOnly, limit: 60 },
+      controller.signal,
+    )
+      .then(({ games }) => setResult({ key: queryKey, games, error: null }))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setResult({ key: queryKey, games: [], error: errorMessage(error) })
+      })
+    return () => controller.abort()
+  }, [queryKey, settledSearch, tag, sort, freeOnly])
 
-  const games = result?.key === queryKey ? result.games : null
+  useEffect(() => {
+    const controller = new AbortController()
+    listGames({ limit: 60 }, controller.signal)
+      .then(({ games }) => setBase(games))
+      .catch(() => {})
+    return () => controller.abort()
+  }, [])
+
+  const tags = useMemo(() => tagsFrom(base ?? []).slice(0, 9), [base])
+
+  const current = result?.key === queryKey ? result : null
+  const games = current?.error ? null : (current?.games ?? null)
+  const loadError = current?.error ?? null
 
   const filtered = tag !== undefined || freeOnly || search.trim() !== ''
 
@@ -79,7 +106,7 @@ export function Catalog() {
             </div>
           </div>
 
-          <HeroCollage className="lg:justify-self-end" />
+          <HeroCollage games={base ?? []} className="lg:justify-self-end" />
         </div>
       </section>
 
@@ -131,11 +158,17 @@ export function Catalog() {
             {freeOnly ? 'Free to play' : tag ? `Tagged ${tag}` : 'Everything'}
           </h2>
           <span className="font-mono tnum text-xs text-ink-soft">
-            {games === null ? 'loading…' : `${games.length} games`}
+            {loadError
+              ? 'unavailable'
+              : games === null
+                ? 'loading…'
+                : `${games.length} games`}
           </span>
         </div>
 
-        {games === null ? (
+        {loadError ? (
+          <LoadFailed message={loadError} />
+        ) : games === null ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(224px,1fr))] gap-5">
             {Array.from({ length: 8 }, (_, i) => (
               <GameCardSkeleton key={i} />
@@ -196,6 +229,30 @@ function FilterChip({
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * The store being unreachable is a different thing from the store being empty,
+ * and saying so is the difference between "try again" and "there is nothing
+ * here". Red, because it is the one state the reader has to act on.
+ */
+function LoadFailed({ message }: { message: string }) {
+  return (
+    <div className="flex flex-col items-start gap-4 rounded-card border-2 border-ink bg-paper-sunk px-7 py-9 shadow-hard md:flex-row md:items-center md:gap-8">
+      <Freehand name="alerts-stop-sign" className="h-20 w-20 shrink-0 text-red" />
+      <div className="flex flex-col items-start gap-3">
+        <h3 className="text-2xl">The catalog would not load.</h3>
+        <p className="max-w-[46ch] font-body text-[15px] text-ink">{message}</p>
+        <Button
+          variant="neutral"
+          size="sm"
+          onClick={() => window.location.reload()}
+        >
+          Try again
+        </Button>
+      </div>
+    </div>
   )
 }
 
