@@ -23,11 +23,11 @@ import {
   type MountStage,
 } from '@/lib/buildPreview'
 import { cn } from '@/lib/utils'
-import { publishGame, studioById, studioTeam } from '@/mocks/games'
+import { publishGame, studioTeam } from '@/mocks/games'
 import { createInvite } from '@/mocks/invites'
 import { useSession } from '@/auth/session'
 import { StudioSetup } from '@/routes/StudioSetup'
-import type { Game, MediaItem } from '@/mocks/types'
+import type { Game, MediaItem, Studio } from '@/mocks/types'
 
 /**
  * Dev upload. Priority 2 in the brief: drag a zip → **see it playing in the
@@ -49,8 +49,20 @@ export function Publish() {
   const [step, setStep] = useState<StepIndex>(0)
 
   // You publish as a studio, so making one comes first. Everything below is
-  // written assuming it exists.
-  const myStudio = studioById(session.studioId ?? '')
+  // written assuming it exists. The studio itself comes from `/api/me` now;
+  // the rest of this screen is still on mocks until its own workflow.
+  const myStudio: Studio | undefined = useMemo(
+    () =>
+      session.studioId
+        ? {
+            id: session.studioId,
+            name: session.studioName ?? 'your studio',
+            address: session.address ?? '',
+            memberCount: 1,
+          }
+        : undefined,
+    [session.studioId, session.studioName, session.address],
+  )
   const myHandle = session.handle ?? 'you'
 
   const [build, setBuild] = useState<UploadedBuild | null>(null)

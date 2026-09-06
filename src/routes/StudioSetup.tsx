@@ -1,13 +1,15 @@
-import { Check, X } from 'lucide-react'
-import { useState } from 'react'
+import { Check, Loader2, X } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Freehand } from '@/components/icons/Freehand'
 import { SiteFooter } from '@/components/SiteFooter'
 import { SiteHeader } from '@/components/SiteHeader'
-import { Button } from '@/components/ui/Button'
+import { Button, ButtonLink } from '@/components/ui/Button'
 import { Sticker } from '@/components/ui/Sticker'
 import { cn } from '@/lib/utils'
-import { createStudio, ENS_PARENT, ensTaken } from '@/mocks/games'
-import { joinStudio, useSession } from '@/auth/session'
+import { checkEnsName, createStudio } from '@/api/studios'
+import { errorMessage } from '@/lib/api'
+import { useDebounced } from '@/lib/useDebounced'
+import { joinStudio, signIn, useSession } from '@/auth/session'
 
 /**
  * Making a studio. You need one before you can publish, and it is the only
@@ -30,25 +32,75 @@ export function StudioSetup({
   const [label, setLabel] = useState('')
   const [bio, setBio] = useState('')
   const [busy, setBusy] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
 
   const defaultHandle = session.email?.split('@')[0] ?? 'you'
   const [handle, setHandle] = useState(defaultHandle)
 
   const cleanLabel = label.trim().toLowerCase().replace(/[^a-z0-9-]/g, '')
-  const taken = cleanLabel.length > 0 && ensTaken(cleanLabel)
-  const ready = name.trim().length > 1 && handle.trim().length > 0 && !taken
+
+  // Every check is a live call against the subregistry on Sepolia, so it waits
+  // for typing to stop. Results carry the label they were fetched for, which
+  // is what stops a slow answer for "tin" landing under "tinroof".
+  const settledLabel = useDebounced(cleanLabel, 400)
+  const [checked, setChecked] = useState<{
+    label: string
+    available: boolean
+    fullName: string | null
+  } | null>(null)
+  /** The parent every label sits under, learned from the first answer. */
+  const [ensParent, setEnsParent] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!settledLabel) return
+    const controller = new AbortController()
+    checkEnsName(settledLabel, controller.signal)
+      .then((result) => {
+        setChecked({
+          label: settledLabel,
+          available: result.available,
+          fullName: result.fullName,
+        })
+        // The suffix is the same for every label, so it is remembered rather
+        // than blinking out between checks. Set here, where the answer
+        // arrives, rather than derived in an effect off the result.
+        if (result.fullName) {
+          setEnsParent(result.fullName.slice(settledLabel.length + 1))
+        }
+      })
+      .catch(() => {
+        // Unreachable is not the same as taken. Leave it unanswered rather
+        // than telling someone a free name is gone.
+      })
+    return () => controller.abort()
+  }, [settledLabel])
+
+  const nameCheck = checked?.label === cleanLabel ? checked : null
+  const checking = cleanLabel.length > 0 && nameCheck === null
+  const taken = nameCheck?.available === false
+
+
+  // A name still being checked blocks the button. Creating one that turns out
+  // to be taken costs a failed chain transaction to find out.
+  const ready =
+    name.trim().length > 1 && handle.trim().length > 0 && !taken && !checking
 
   function create() {
     setBusy(true)
+    setFailed(null)
     createStudio({
-      name,
-      ensLabel: cleanLabel || undefined,
-      bio,
+      name: name.trim(),
+      handle: handle.trim(),
+      bio: bio.trim() || undefined,
+      ensSubname: cleanLabel || undefined,
     })
       .then(() => {
+        // The studio is the server's now, so the session re-reads rather than
+        // being told what to believe.
         joinStudio()
         onDone?.()
       })
+      .catch((error: unknown) => setFailed(errorMessage(error)))
       .finally(() => setBusy(false))
   }
 
@@ -115,26 +167,33 @@ export function StudioSetup({
               aria-label="Your name on the network"
               className="min-w-0 flex-1 bg-transparent font-mono text-[15px] outline-none placeholder:text-ink-faint"
             />
-            <span className="font-mono text-[15px] text-ink-soft">
-              .{ENS_PARENT}
-            </span>
+            {ensParent ? (
+              <span className="shrink-0 font-mono text-[15px] text-ink-soft">
+                .{ensParent}
+              </span>
+            ) : null}
           </div>
           {cleanLabel ? (
             <p
               className={cn(
                 'mt-2 flex items-center gap-1.5 font-mono text-[11px]',
-                taken ? 'text-pink' : 'text-green',
+                checking ? 'text-ink-soft' : taken ? 'text-pink' : 'text-green',
               )}
             >
-              {taken ? (
+              {checking ? (
+                <>
+                  <Loader2 size={12} strokeWidth={3} className="animate-spin" />
+                  Checking {cleanLabel}
+                </>
+              ) : taken ? (
                 <>
                   <X size={12} strokeWidth={3} />
-                  {cleanLabel}.{ENS_PARENT} is taken
+                  {nameCheck?.fullName ?? cleanLabel} is taken
                 </>
               ) : (
                 <>
                   <Check size={12} strokeWidth={3} />
-                  {cleanLabel}.{ENS_PARENT} is free
+                  {nameCheck?.fullName ?? cleanLabel} is free
                 </>
               )}
             </p>
@@ -158,32 +217,109 @@ export function StudioSetup({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-4 border-t-2 border-ink pt-5">
-          <Button
-            variant="primary"
-            size="lg"
-            disabled={!ready || busy}
-            onClick={create}
-          >
-            {busy ? 'Making it…' : 'Create studio'}
-          </Button>
-          <span className="font-mono text-[11px] text-ink-soft">
-            Been invited to one? It&rsquo;s in your notifications.
-          </span>
+        <div className="flex flex-col gap-3 border-t-2 border-ink pt-5">
+          <div className="flex flex-wrap items-center gap-4">
+            <Button
+              variant="primary"
+              size="lg"
+              disabled={!ready || busy}
+              onClick={create}
+            >
+              {busy ? 'Making it…' : 'Create studio'}
+            </Button>
+            <span className="font-mono text-[11px] text-ink-soft">
+              Been invited to one? It&rsquo;s in your notifications.
+            </span>
+          </div>
+
+          {/* Claiming a name is a real transaction on a real network, and it
+              takes about as long as one. Saying so is better than a spinner
+              that looks stuck. */}
+          {busy && cleanLabel ? (
+            <p className="flex items-center gap-2 font-mono text-[11px] text-ink-soft">
+              <Loader2 size={12} strokeWidth={3} className="animate-spin" />
+              Claiming {cleanLabel}
+              {ensParent ? `.${ensParent}` : ''}. This takes a few seconds.
+            </p>
+          ) : null}
+
+          {failed ? (
+            <p className="rounded-card border-2 border-ink border-l-8 border-l-red bg-paper-sunk px-4 py-3 font-body text-[13px] leading-relaxed">
+              {failed}
+            </p>
+          ) : null}
         </div>
       </div>
     </>
   )
 
-  if (embedded) return <div>{body}</div>
+  // One studio per account, which the server enforces too. Landing here with
+  // one already is a wrong turn, not an error, so it points at the one you
+  // have rather than at a form that would be refused.
+  const content = !session.ready ? (
+    <div className="hatch h-64 rounded-card border-2 border-ink" />
+  ) : !session.signedIn ? (
+    <Detour
+      title="Sign in first."
+      body="A studio belongs to an account, so we need to know whose it is."
+      action={
+        <Button variant="primary" size="lg" onClick={() => signIn()}>
+          Sign in
+        </Button>
+      }
+    />
+  ) : session.studioId ? (
+    <Detour
+      title="You already have a studio."
+      body={`${session.studioName ?? 'It'} is yours. Everything you publish goes out under it.`}
+      action={
+        <ButtonLink
+          to={`/studio/${session.studioId}`}
+          variant="primary"
+          size="lg"
+        >
+          Go to your studio
+        </ButtonLink>
+      }
+    />
+  ) : (
+    body
+  )
+
+  if (embedded) return <div>{content}</div>
 
   return (
     <div className="flex min-h-screen flex-col">
       <SiteHeader />
       <main className="mx-auto w-full max-w-180 flex-1 px-6 py-10">
-        {body}
+        {content}
       </main>
       <SiteFooter />
+    </div>
+  )
+}
+
+/** A wrong turn rather than a failure, so it points somewhere useful. */
+function Detour({
+  title,
+  body,
+  action,
+}: {
+  title: string
+  body: string
+  action: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col items-start gap-4 rounded-card border-2 border-ink bg-yellow px-7 py-9 shadow-hard md:flex-row md:items-center md:gap-8">
+      <Freehand
+        name="business-deal-handshake"
+        className="h-20 w-20 shrink-0 text-ink"
+      />
+      <div className="flex flex-col items-start gap-3">
+        <h1 className="text-2xl">{title}</h1>
+        <p className="max-w-[44ch] font-body text-[15px] text-ink">{body}</p>
+        {action}
+      </div>
     </div>
   )
 }
