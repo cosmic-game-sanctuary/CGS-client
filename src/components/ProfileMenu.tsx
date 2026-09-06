@@ -1,10 +1,10 @@
-import { ChevronDown, Plus } from 'lucide-react'
+import { Check, ChevronDown, Copy, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
-import { formatPrice } from '@/lib/format'
+import { formatPrice, truncateAddress } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { errorMessage } from '@/lib/api'
+import { ApiError, errorMessage } from '@/lib/api'
 import { fund, signIn, signOut, useSession } from '@/auth/session'
 
 /**
@@ -19,8 +19,14 @@ import { fund, signIn, signOut, useSession } from '@/auth/session'
  *   Team and credits live there because they're public facts about the studio,
  *   not private settings.
  * - **Publish** (`/publish`) — an action, not a place. A menu item, not a tab.
- * - **Wallet** — balance and top-up, inline here. There is nothing else to
- *   configure, so a settings page would be an empty room.
+ * - **Wallet** — balance, top-up, and the address to send to, inline here.
+ *   There is nothing else to configure, so a settings page would be an empty
+ *   room.
+ *
+ * The deposit address is the only funding route that always works. The faucet
+ * button beside it moves funds out of the operator account and only exists
+ * when the server was started with `DEV_FAUCET=on`, so it is a convenience for
+ * whoever is running this locally, never the answer for a real wallet.
  */
 export function ProfileMenu() {
   const session = useSession()
@@ -67,7 +73,16 @@ export function ProfileMenu() {
     try {
       await fund()
     } catch (error) {
-      setFundError(errorMessage(error))
+      // The faucet route is not mounted unless the server was started with
+      // DEV_FAUCET=on, so a 404 here is a configuration answer rather than a
+      // failure. Saying "no route for POST /api/dev/faucet" to someone who
+      // just wants funds is the wrong sentence, and the address below is the
+      // right one either way.
+      setFundError(
+        error instanceof ApiError && error.status === 404
+          ? 'The test faucet is off. Send funds to the address below instead.'
+          : errorMessage(error),
+      )
     } finally {
       setFunding(false)
     }
@@ -155,6 +170,13 @@ export function ProfileMenu() {
                 {session.error}
               </p>
             ) : null}
+
+            {session.address ? (
+              <DepositAddress
+                address={session.address}
+                accountId={session.hederaAccountId}
+              />
+            ) : null}
           </div>
 
           <nav className="flex flex-col p-1.5">
@@ -182,6 +204,80 @@ export function ProfileMenu() {
           </div>
         </div>
       ) : null}
+    </div>
+  )
+}
+
+/**
+ * Where to send funds from a wallet you already have.
+ *
+ * This is the path that does not spend anything of ours. A Privy embedded
+ * wallet is an ordinary EVM address, and HashPack and friends can send
+ * straight to one, so a person with their own testnet funds never needs the
+ * faucet.
+ *
+ * The order genuinely matters and is the reason the hint is here rather than
+ * in a doc nobody reads: the Hedera account behind this address does not exist
+ * until value first lands on it, and HBAR is what creates it. A token sent
+ * first has nowhere to go. Once the account exists its id appears below, which
+ * doubles as confirmation that the first transfer worked.
+ */
+function DepositAddress({
+  address,
+  accountId,
+}: {
+  address: string
+  accountId: string | null
+}) {
+  const [copied, setCopied] = useState(false)
+
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), 1600)
+    return () => clearTimeout(timer)
+  }, [copied])
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(address)
+      setCopied(true)
+    } catch {
+      // Clipboard access can be refused outright, and a silent no-op reads as
+      // a broken button. Selecting the text is the fallback everyone knows.
+      setCopied(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 border-t-2 border-dashed border-ink-faint pt-2.5">
+      <span className="label-micro text-ink-soft">Or send from another wallet</span>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <code
+          title={address}
+          className="min-w-0 flex-1 truncate rounded-md border-2 border-ink bg-paper px-2 py-1 font-mono text-[11px]"
+        >
+          {truncateAddress(address, 10, 6)}
+        </code>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label="Copy your wallet address"
+          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip border-2 border-ink bg-paper px-2 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-transform duration-130 hover:-translate-y-px active:translate-y-px"
+        >
+          {copied ? (
+            <Check size={11} strokeWidth={3.5} className="text-green" />
+          ) : (
+            <Copy size={11} strokeWidth={3} />
+          )}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-ink-soft">
+        Send HBAR first. That is what opens the account. Then send USDC.
+      </p>
+      <p className="mt-1 font-mono text-[10px] text-ink-faint">
+        {accountId ? `Account ${accountId}` : 'No account yet'}
+      </p>
     </div>
   )
 }
