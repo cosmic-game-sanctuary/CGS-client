@@ -4,12 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import { formatPrice, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
-  markAllRead,
-  markRead,
   useNotifications,
   type AppNotification,
   type NotificationKind,
-} from '@/mocks/notifications'
+} from '@/lib/notifications'
 
 /**
  * The inbox, in the header.
@@ -36,7 +34,7 @@ const KIND: Record<
 }
 
 export function NotificationBell() {
-  const items = useNotifications()
+  const { items, markRead, markAllRead } = useNotifications()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)

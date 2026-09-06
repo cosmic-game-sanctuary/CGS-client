@@ -9,39 +9,81 @@ import { PlayOverlay } from '@/components/play/LightsDown'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { Reveal } from '@/components/ui/Reveal'
 import { useAgents } from '@/mocks/agent'
-import { listGames } from '@/mocks/games'
+import { getGame, listGames } from '@/api/games'
+import { getLibrary, type WireLibraryGame } from '@/api/library'
+import { errorMessage } from '@/lib/api'
 import { formatPrice } from '@/lib/format'
-import { useSession } from '@/auth/session'
+import { signIn, useSession } from '@/auth/session'
 import type { Game } from '@/mocks/types'
 
 /**
  * Games you hold a key for. Presented as ticket stubs rather than store cards,
  * because that is what they are now: something you keep, not something on sale.
+ *
+ * The list is the server's, checked against the chain rather than against
+ * anything this app remembers — so a key that reached this wallet without
+ * passing through the store still shows up, which is the ownership claim
+ * being true rather than asserted.
  */
 export function Library() {
   const session = useSession()
   const [playing, setPlaying] = useState<Game | null>(null)
-  const [all, setAll] = useState<Game[] | null>(null)
+  const [loaded, setLoaded] = useState<{
+    games: WireLibraryGame[]
+    error: string | null
+  } | null>(null)
+  // Still mock-backed: agents are W10. The rest of this screen is real.
   const agents = useAgents()
+  const [watchable, setWatchable] = useState<Game[]>([])
+
+  const signedIn = session.signedIn
 
   useEffect(() => {
-    let live = true
-    listGames().then((games) => {
-      if (live) setAll(games)
-    })
-    return () => {
-      live = false
-    }
-  }, [])
+    if (!signedIn) return
+    const controller = new AbortController()
+    getLibrary(controller.signal)
+      .then((games) => setLoaded({ games, error: null }))
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return
+        setLoaded({ games: [], error: errorMessage(error) })
+      })
+    return () => controller.abort()
+    // `balanceUnits` moves when a purchase settles, which is the cheapest
+    // signal that this list is now out of date.
+  }, [signedIn, session.balanceUnits])
 
-  const owned = all?.filter((game) => session.ownedGameIds.includes(game.id))
+  // The agent rows name games the library doesn't contain yet, by definition.
+  useEffect(() => {
+    if (agents.length === 0) return
+    const controller = new AbortController()
+    listGames({ limit: 60 }, controller.signal)
+      .then(({ games }) => setWatchable(games))
+      .catch(() => {})
+    return () => controller.abort()
+  }, [agents.length])
+
+  // The stub carries what it needs to identify a game; the play surface wants
+  // the whole thing. Fetched on the click rather than up front, so opening
+  // this page is one request instead of one per game you own.
+  const [opening, setOpening] = useState<string | null>(null)
+
+  function open(game: WireLibraryGame) {
+    setOpening(game.id)
+    getGame(game.slug)
+      .then((full) => {
+        if (full) setPlaying(full)
+      })
+      .finally(() => setOpening(null))
+  }
+
+  const owned = loaded?.games
   // A trigger is a game you're trying to get, so it belongs beside the ones
   // you got. This is why there is no separate agents page.
   const watching = agents
     .filter((agent) => agent.status === 'watching')
     .map((agent) => ({
       agent,
-      game: all?.find((game) => game.id === agent.gameId),
+      game: watchable.find((game) => game.id === agent.gameId),
     }))
     .filter((row) => row.game !== undefined)
 
@@ -56,7 +98,37 @@ export function Library() {
           site is still around.
         </p>
 
-        {owned === undefined ? (
+        {!signedIn ? (
+          // Signed out this page cannot say anything true. An empty grid would
+          // read as "you own nothing", which is a claim about a wallet we have
+          // not been shown.
+          <div className="mt-8 flex flex-col items-start gap-4 rounded-card border-2 border-ink bg-yellow px-7 py-9 shadow-hard md:flex-row md:items-center md:gap-8">
+            <Freehand name="lock-key-1" className="h-20 w-20 text-ink" />
+            <div className="flex flex-col items-start gap-3">
+              <h2 className="text-2xl">Sign in to see your keys.</h2>
+              <p className="max-w-[44ch] font-body text-[15px] text-ink">
+                They live in your wallet, so we have to know which wallet is
+                yours.
+              </p>
+              <Button variant="neutral" size="sm" onClick={() => signIn()}>
+                Sign in
+              </Button>
+            </div>
+          </div>
+        ) : loaded?.error ? (
+          <div className="mt-8 flex flex-col items-start gap-4 rounded-card border-2 border-ink border-l-8 border-l-red bg-paper-sunk px-7 py-9 shadow-hard md:flex-row md:items-center md:gap-8">
+            <Freehand
+              name="alerts-stop-sign"
+              className="h-20 w-20 shrink-0 text-red"
+            />
+            <div className="flex flex-col items-start gap-3">
+              <h2 className="text-2xl">Your keys would not load.</h2>
+              <p className="max-w-[44ch] font-body text-[15px] text-ink">
+                {loaded.error}
+              </p>
+            </div>
+          </div>
+        ) : owned === undefined ? (
           <div className="mt-8 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {[0, 1, 2].map((i) => (
               <div
@@ -84,7 +156,8 @@ export function Library() {
               <KeyStub
                 key={game.id}
                 game={game}
-                onPlay={() => setPlaying(game)}
+                busy={opening === game.id}
+                onPlay={() => open(game)}
                 style={{ '--i': i } as CSSProperties}
               />
             ))}
@@ -133,13 +206,25 @@ export function Library() {
   )
 }
 
+/** `5400` → `"1h 30m"`. Playtime, never money, so no tabular alignment needed. */
+function formatPlaytime(seconds: number): string {
+  if (seconds < 60) return 'under a minute'
+  const minutes = Math.round(seconds / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`
+}
+
 /** The GameKey as a ticket stub, per DESIGN.md §8. */
 function KeyStub({
   game,
+  busy,
   onPlay,
   style,
 }: {
-  game: Game
+  game: WireLibraryGame
+  busy: boolean
   onPlay: () => void
   style?: CSSProperties
 }) {
@@ -164,8 +249,25 @@ function KeyStub({
         <span className="mt-0.5 block truncate font-mono text-[11px] text-ink-soft">
           {game.studio.ens ?? game.studio.name}
         </span>
-        <Button variant="go" size="sm" className="mt-3" onClick={onPlay}>
-          Play
+        {/* Your own hours on this game, not a global counter. Only shown once
+            there is something to show; "0 plays" on a game you just bought is
+            noise rather than information. */}
+        {game.myPlayCount > 0 ? (
+          <span className="mt-1 block truncate font-mono text-[11px] text-ink-soft">
+            {game.myPlayCount} {game.myPlayCount === 1 ? 'play' : 'plays'}
+            {game.myPlaytimeSeconds > 0
+              ? ` · ${formatPlaytime(game.myPlaytimeSeconds)}`
+              : ''}
+          </span>
+        ) : null}
+        <Button
+          variant="go"
+          size="sm"
+          className="mt-3"
+          disabled={busy}
+          onClick={onPlay}
+        >
+          {busy ? 'Opening…' : 'Play'}
         </Button>
       </div>
 
@@ -179,6 +281,13 @@ function KeyStub({
           <br />
           on-chain
         </span>
+        {/* The serial is the concrete form of the claim above it: not "we say
+            you own this" but "this exact token, number N". */}
+        {game.serial !== null ? (
+          <span className="font-mono tnum text-[10px] text-paper/75">
+            #{game.serial}
+          </span>
+        ) : null}
       </div>
     </article>
   )

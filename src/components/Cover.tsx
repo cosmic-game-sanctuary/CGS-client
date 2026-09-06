@@ -13,7 +13,9 @@ export function Cover({
   className,
   title,
 }: {
-  game: Pick<Game, 'coverSeed' | 'coverUrl' | 'title'>
+  // `coverUrl` is nullable rather than optional because that is how the API
+  // sends it, and every caller here passes a server shape straight through.
+  game: Pick<Game, 'coverSeed' | 'title'> & { coverUrl?: string | null }
   className?: string
   title?: string
 }) {
