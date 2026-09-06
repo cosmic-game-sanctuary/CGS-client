@@ -44,9 +44,9 @@ Not a web3 game. Not GameFi. Not an adult-content site. Say it early — ~90% of
 |---|---|---|
 | Catalog / browse | ✅ done | Grid, filters, sort, search, empty + loading states. Works with no wallet and no login. |
 | Game listing | ✅ done | Cover, description, price, public splits, verified-purchase reviews, report. |
-| Checkout | ✅ done | Overlay, not a route. Sign in → fund → pay → mint → boot. All mocked. |
-| In-browser player | ✅ done | `GameStage` on the night surface + a `/play/:slug` permalink. Real build not mounted yet. |
-| Dev upload | ✅ done | Four steps: build → details → splits → publish. **A dropped zip actually runs in the page.** Publishing pushes into the in-memory catalog. |
+| Checkout | ✅ done | Overlay, not a route. Sign in → fund → pay → mint → boot. **Real:** x402 on Hedera, signed by the buyer's own wallet in the tab. |
+| In-browser player | ✅ done | `GameStage` on the night surface + a `/play/:slug` permalink. Runs the real purchased build. |
+| Dev upload | ✅ done | Four steps: build → details → splits → publish. **A dropped zip actually runs in the page.** Publishing pins to IPFS and mints a real token. |
 | Studio profile | ✅ done | Games, ENS name, stats, and credits derived from splits. |
 | Agent setup | ✅ done | **On the game listing, not a page of its own.** Set a trigger instead of buying, fund its wallet there. |
 | Swipe discovery | ⬜ maybe | "Surprise me". Genuinely differentiating, pure frontend. Not on the critical demo path. |
@@ -161,12 +161,17 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### The current phase — read this before proposing anything
 
-**We are building the entire UI on mock data first.** No backend connection, no Privy, no wallet, no chain, no x402. Every screen renders from local fixtures.
+**That mock-data phase is over.** It ran from the first screen to 6 Sep 2026 and did its job; the note that used to be here said not to add Privy or fetch `/api`, and both of those are now how the app works. Kept as history because the shape it left behind explains the code:
 
-- Mock data lives in `src/mocks/`, typed against the contract above.
-- Async is faked with a small delay so loading states are real and get designed.
-- **Do not add `@privy-io/react-auth`, `wagmi`, `viem`, or any fetch to `/api` yet.** Integration is a later, deliberate phase.
-- Auth state is a mock toggle, so signed-in and signed-out layouts can both be built and reviewed.
+> ~~We are building the entire UI on mock data first. No backend connection, no Privy, no wallet, no chain, no x402. Every screen renders from local fixtures. Do not add `@privy-io/react-auth`, `wagmi`, `viem`, or any fetch to `/api` yet.~~
+
+**We are now integrating, one workflow at a time.** Build one path end to end, test it in a browser, then start the next. Not a layer at a time: that leaves every screen half-wired and nothing testable.
+
+- **Real:** browse, sign in, library, notifications, studio creation with ENS, publish, and buy-and-play. Money, GameKeys and builds are all genuine.
+- **Still on mocks:** reviews, reports, `/invite/:id`, the agent. `src/mocks/games.ts` survives only to serve those; everything else reads `src/api/`.
+- `src/api/` holds one module per area over `src/lib/api.ts`. `src/api/wire.ts` is what the server sends, `src/mocks/types.ts` is what components are written against, and `src/api/adapt.ts` is the only file that knows both. An API change is a diff in those three.
+- **Money:** integer `*Units` for anything compared or added, float `*Usd` for display only. `Game` carries both.
+- The seam left in a screen is still marked `TODO(integration)`. Grep finds what's left.
 
 ---
 
@@ -177,24 +182,25 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Buyer and dev paths both complete on mock data
-**Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@iconify-json/streamline-freehand` (dev)
+**Stage:** Integrated against the live API, six workflows deep. Real money, real GameKeys, real builds.
+**Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@privy-io/react-auth`, `@iconify-json/streamline-freehand` (dev)
 **Screens built:** catalog (`/`), listing (`/game/:slug`), checkout overlay, player (`/play/:slug`), publish (`/publish`), studio (`/studio/:id` and `/studio/new`), library (`/library`), invite (`/invite/:id`), 404
-**Deployed:** no
+**Deployed:** no. Needs `VITE_PREVIEW_ORIGIN` (§3) and a server with a persistent disk, since builds are now served from one.
 
-**Working end to end, both directions:**
-- **Buy:** browse → filter/sort/search → listing → buy → sign in → fund → pay → key mints → the game boots in the same tab. The listing then shows the owned state and the header shows your balance.
-- **Publish:** drop a zip → see it running → details, cover, price → splits by email totalling 100% → publish. **The game is then actually in the catalog** with a working listing and studio page.
-- **Get invited:** publish with someone added by email → open their invite → accept → you are in the studio, with the sales behind it in your inbox.
+**Working end to end, against the real backend:**
+- **Buy:** browse → listing → buy → Privy sign-in → add funds → **pay, signed by your own wallet in this tab** → x402 settles on Hedera → the GameKey mints → the game boots in the same tab. Verified on testnet: $3.00 left the buyer, $1.71 came back as their split share, the key minted with serial 1.
+- **Publish:** make a studio (real ENS subname on Sepolia) → drop a zip → see it running → details, cover, price → splits, including someone who has only an email → publish. The build is pinned to IPFS and a real HTS token is created.
+- **Play:** the build is fetched from the API, unpacked in the browser and run on the isolated build origin. Same pipeline as the publish preview.
 
-All from `src/mocks/`. `npm run lint` and `npm run build` are both clean.
+**Still on mocks:** reviews, reports, `/invite/:id`, the agent.
+
+`npm run lint` and `npm run build` are both clean.
 
 **Next up:**
-1. Install Impeccable and run `/impeccable audit` per screen.
-2. Swipe discovery, if there is time. Deliberately not on the critical path.
-3. Later, as a deliberate phase: Privy, then the API, then the x402 download path.
-
-Nothing is blocking a public deploy except setting `VITE_PREVIEW_ORIGIN` (§3).
+1. `/invite/:id`, which is also what settles the payouts held for someone who hasn't accepted.
+2. Reviews, likes and reports.
+3. The agent.
+4. Then Impeccable per screen, and swipe discovery if there is time.
 
 ### Layout of the repo
 
@@ -264,10 +270,33 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 | Build isolation | A second origin, probed in dev, `VITE_PREVIEW_ORIGIN` in prod | The frame needs `allow-same-origin` to boot most engines. Giving it an origin of its own is the only way to have both that and safety. §3. |
 | Notifications | A header panel, no route | Every row points somewhere that already exists. A page would be a corridor. |
 | Invite | Its own route, reachable signed out | It is the first thing a new person ever sees of CGS, arriving from an email. Gating it behind sign-in would ask for an account before saying why. |
+| Integration order | One workflow end to end, then the next | A layer at a time leaves every screen half-wired and nothing testable. Each pass ends with something that either works in a browser or doesn't. |
+| API layer | `src/api/*` over `src/lib/api.ts`, with `wire.ts` / `adapt.ts` / `types.ts` split three ways | Components stay written against a view model that suits them. When the API changes, the diff is in one file rather than a hundred screens. |
+| Where a purchase is signed | The server freezes the transfer, the **browser** signs the hashes, the server settles | Privy will not let the server sign with a buyer's own wallet, and the ways around that ask for standing permission to move their money. The browser has always been able to sign for its own wallet. §3. |
+| Where a build comes from | The API, unpacked in the browser onto the build origin | No IPFS gateway will serve one (Pinata refuses HTML on shared subdomains; public gateways can't find fresh CIDs). The CID still proves what a build is. |
+| Boot sequences | Beats carry the work; their timings are floors, not durations | A sequence that runs to a script finishes before the payment does, and the shutter comes up on a game nobody bought. |
+| Optimistic ownership | Local flag at settlement, replaced by the server's answer | The buyer is entitled the moment payment settles, and the GameKey lands seconds later. Never the source of truth: a reload asks the server. |
 
 ### Log
 
 _Newest first._
+
+#### 2026-09-06 (integration W1–W6) — Suparno
+
+Six workflows, each built and tested end to end before the next started. Cross-repo detail is in `../CGS-docs/PROGRESS-LOG.md`; this is what only this repo cares about.
+
+- **Did:** browse signed out, sign in, library and notifications, studio creation, publish, and buy-and-play. `src/mocks/session.ts` is deleted. `src/api/` is the new read/write layer; `src/mocks/games.ts` survives only for reviews, reports and the invite screen, whose turn hasn't come.
+- **Privy would not bundle under Vite 8.** Its optional Solana/Abstract/Farcaster peers were being stubbed to empty modules, which fails as `MISSING_EXPORT` at build time. Fixed with a **CJS** Proxy stub aliased in `vite.config.ts` — ESM cannot answer arbitrary named imports, CJS can. Seven aliases, one file, `src/lib/unusedChainStub.cjs`.
+- **Privy v3 nests `createOnLogin`** under `embeddedWallets.ethereum`, not `embeddedWallets`. The docs and INTEGRATION.md both say otherwise; the `.d.ts` is right.
+- **`session.tsx` had to split into `session.ts` + `SessionProvider.tsx`.** `react-refresh/only-export-components` forbids a file exporting both a component and plain functions.
+- **`react-hooks` v7 is stricter than it looks.** It rejects `setState` in an effect body (hit twice), reassigning a closed-over variable inside an async function created during render, and passing a ref into a function during render. Where two steps of a sequence need to hand something between them, the fix is a plain holder object created inside the `useMemo` — not a ref.
+- **The boot sequence could pay twice, and this is the one to remember.** `LightsDown` had `beats` in its effect dependencies. A beat's own work changes what the app renders — a purchase updates the session, the parent re-renders, a new beats array arrives, and the effect tears down mid-payment and starts over. The second run would have charged the card again. Beats are now read through a ref and the sequence starts exactly once. **Anything that runs a real side effect on a timeline must not be restartable.**
+- **`GameStage` no longer has a "Placeholder" branch that means two things.** It takes `playUrl`, falls back to `localBuildEntry` (a zip mounted in this browser, which is the publish preview), and only says "No build" when there is genuinely nothing to run.
+- **Checkout's step is derived, not stored.** It used to sit on "sign in" after Privy's modal had already signed you in, because `phase` was initialised from the session once and never revisited.
+- **`Player.tsx` asks the server whether you own the game**, instead of trusting `ownedGameIds`, which is per-session optimism and empty after a reload. A permalink to a game you own used to say you didn't.
+- **`Game` gained `priceUnits`.** The funding step compared `balanceUsd < priceUsd`, and a wallet holding exactly the price of a game is where comparing floats decides wrong.
+- **Note:** `npm run lint` does not typecheck. `npm run build` is what catches a missing field on a mock fixture.
+
 
 #### 2026-09-06 (new mark) — Suparno
 - **The logo changed.** `DEFAULT_MARK` is now **`saturn`**, a ringed planet. Fold was a flat page icon with no mass, and next to the name it read as a file, not a sanctuary. Fold is still in `MARKS` if this needs reversing.

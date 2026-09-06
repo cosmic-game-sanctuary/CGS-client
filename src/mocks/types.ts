@@ -81,9 +81,12 @@ export interface Game {
   /** Rough build size, shown so the "no install" claim is concrete. */
   buildKb: number
   /**
-   * Entry URL of a build mounted in this browser session, when the game was
-   * published here. Mock-only: the real build comes from the IPFS CID through
-   * the x402 download.
+   * Entry URL of a build mounted in this browser session, which is the dev's
+   * own zip on the publish screen before it exists anywhere else.
+   *
+   * Not a mock, and not the usual case. A purchased build is fetched through
+   * `api/purchase.ts#mountGrant` and ends up on the same origin by the same
+   * route; this one just never had a server to come from.
    */
   localBuildEntry?: string
 }
