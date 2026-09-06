@@ -13,6 +13,18 @@ export interface DraftMember {
   /** `you` — the publisher. `teammate` — already in the studio, added by name.
    *  `invite` — new to the studio, so an email is required. */
   kind: 'you' | 'teammate' | 'invite'
+  /**
+   * The studio membership this share belongs to, for a teammate picked off the
+   * roster. The server pays whoever that row resolves to, so nothing here has
+   * to know or guess anyone's wallet address.
+   */
+  memberId?: string
+}
+
+/** Someone already on the studio, as the roster knows them. */
+export interface TeamMember {
+  id: string
+  handle: string
 }
 
 const BADGE = {
@@ -245,7 +257,7 @@ export function SplitEditor({
   members: DraftMember[]
   onChange: (next: DraftMember[]) => void
   /** People already in this studio — addable by name, no email needed. */
-  team?: string[]
+  team?: TeamMember[]
 }) {
   const [entry, setEntry] = useState('')
   const [role, setRole] = useState('')
@@ -254,17 +266,19 @@ export function SplitEditor({
   const remaining = 100 - total
 
   const added = new Set(members.map((member) => member.label.toLowerCase()))
-  const available = team.filter((handle) => !added.has(handle.toLowerCase()))
+  const available = team.filter(
+    (person) => !added.has(person.handle.toLowerCase()),
+  )
 
   const typed = entry.trim()
   const suggestions = typed
-    ? available.filter((handle) =>
-        handle.toLowerCase().includes(typed.toLowerCase()),
+    ? available.filter((person) =>
+        person.handle.toLowerCase().includes(typed.toLowerCase()),
       )
     : available
 
   const exactTeammate = available.find(
-    (handle) => handle.toLowerCase() === typed.toLowerCase(),
+    (person) => person.handle.toLowerCase() === typed.toLowerCase(),
   )
   const isEmail = looksLikeEmail(typed)
   const canAdd = Boolean(exactTeammate) || isEmail
@@ -277,7 +291,7 @@ export function SplitEditor({
     )
   }
 
-  function addPerson(label: string, kind: 'teammate' | 'invite') {
+  function addPerson(label: string, kind: 'teammate' | 'invite', memberId?: string) {
     if (added.has(label.toLowerCase())) return
     onChange([
       ...members,
@@ -289,6 +303,7 @@ export function SplitEditor({
         role: role.trim() || 'contributor',
         pct: 0,
         kind,
+        memberId,
       },
     ])
     setEntry('')
@@ -296,7 +311,7 @@ export function SplitEditor({
   }
 
   function add() {
-    if (exactTeammate) addPerson(exactTeammate, 'teammate')
+    if (exactTeammate) addPerson(exactTeammate.handle, 'teammate', exactTeammate.id)
     else if (isEmail) addPerson(typed, 'invite')
   }
 
@@ -439,15 +454,15 @@ export function SplitEditor({
             </span>
             <div className="mt-2 flex flex-wrap gap-2">
               {suggestions.length > 0 ? (
-                suggestions.map((handle) => (
+                suggestions.map((person) => (
                   <button
-                    key={handle}
+                    key={person.id}
                     type="button"
-                    onClick={() => addPerson(handle, 'teammate')}
+                    onClick={() => addPerson(person.handle, 'teammate', person.id)}
                     className="flex cursor-pointer items-center gap-1.5 rounded-chip border-2 border-ink bg-paper px-3 py-1.5 font-mono text-[12px] font-semibold text-ink transition-transform duration-130 hover:-translate-y-px hover:bg-yellow active:translate-y-px"
                   >
                     <Plus size={12} strokeWidth={3} />
-                    {handle}
+                    {person.handle}
                   </button>
                 ))
               ) : (

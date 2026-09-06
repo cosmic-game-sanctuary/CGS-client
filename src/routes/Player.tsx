@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { PLAY_BEATS } from '@/components/play/beats'
 import { LightsDown } from '@/components/play/LightsDown'
 import { ButtonLink } from '@/components/ui/Button'
-import { getGame } from '@/mocks/games'
+import { getGame } from '@/api/games'
 import { useSession } from '@/auth/session'
 import type { Game } from '@/mocks/types'
 

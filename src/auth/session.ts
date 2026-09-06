@@ -31,6 +31,12 @@ export interface SessionState {
   /** Display only. `balanceUnits` is the integer everything else uses. */
   balanceUsd: number
   balanceUnits: number
+  /**
+   * Decimals of the settlement asset. Needed to turn a price someone typed
+   * into the integer units the API wants, and there is nowhere else to learn
+   * it before a game exists to read it off.
+   */
+  assetDecimals: number
   /** Games this wallet holds a key for. */
   ownedGameIds: string[]
   studioId: string | null
@@ -55,6 +61,7 @@ export const EMPTY_SESSION: SessionState = {
   hederaAccountId: null,
   balanceUsd: 0,
   balanceUnits: 0,
+  assetDecimals: 6,
   ownedGameIds: [],
   studioId: null,
   studioName: null,

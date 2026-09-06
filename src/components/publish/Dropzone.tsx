@@ -8,6 +8,12 @@ import { cn } from '@/lib/utils'
 export interface UploadedBuild {
   name: string
   sizeKb: number
+  /**
+   * The zip itself, kept so publishing can upload the same bytes that were
+   * just unpacked and played. Previewing and publishing must not be able to
+   * disagree about what the build is.
+   */
+  file: File
 }
 
 /**

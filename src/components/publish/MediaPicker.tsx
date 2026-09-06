@@ -31,6 +31,7 @@ export function MediaPicker({
       id: `md_${file.name}_${file.size}_${i}`,
       kind: file.type.startsWith('video/') ? 'video' : 'image',
       url: URL.createObjectURL(file),
+      file,
     }))
     const next = [...items, ...added.filter((item) => !items.some((e) => e.id === item.id))]
     onChange(next)

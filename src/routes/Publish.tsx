@@ -23,11 +23,12 @@ import {
   type MountStage,
 } from '@/lib/buildPreview'
 import { cn } from '@/lib/utils'
-import { publishGame, studioTeam } from '@/mocks/games'
-import { createInvite } from '@/mocks/invites'
+import { errorMessage } from '@/lib/api'
+import { getStudio } from '@/api/games'
+import { publishDraft, uploadGame, type SplitInput } from '@/api/publish'
 import { useSession } from '@/auth/session'
 import { StudioSetup } from '@/routes/StudioSetup'
-import type { Game, MediaItem, Studio } from '@/mocks/types'
+import type { MediaItem, Studio } from '@/mocks/types'
 
 /**
  * Dev upload. Priority 2 in the brief: drag a zip → **see it playing in the
@@ -89,16 +90,40 @@ export function Publish() {
   const [members, setMembers] = useState<DraftMember[]>([
     { id: 'm_owner', label: myHandle, role: 'code', pct: 100, kind: 'you' },
   ])
-  const team = useMemo(
-    () =>
-      myStudio
-        ? studioTeam(myStudio.id).filter((handle) => handle !== myHandle)
-        : [],
-    [myStudio, myHandle],
-  )
+  // The people already on this studio, so they can be added by name with no
+  // email and no address. Comes from the roster rather than from past splits:
+  // a member who joined but hasn't shipped yet is still someone you can credit.
+  const [team, setTeam] = useState<Array<{ id: string; handle: string }>>([])
+  useEffect(() => {
+    if (!myStudio) return
+    const controller = new AbortController()
+    getStudio(myStudio.id, controller.signal)
+      .then((profile) =>
+        setTeam(
+          (profile?.members ?? [])
+            .filter((member) => member.handle !== myHandle)
+            .map((member) => ({ id: member.id, handle: member.handle })),
+        ),
+      )
+      .catch(() => {})
+    return () => controller.abort()
+  }, [myStudio, myHandle])
 
   const [publishing, setPublishing] = useState(false)
-  const [published, setPublished] = useState<Game | null>(null)
+  const [publishError, setPublishError] = useState<string | null>(null)
+  // A draft that uploaded but hasn't been published. Kept so a failure on the
+  // second call doesn't re-upload the build on retry — it is already pinned.
+  const [draft, setDraft] = useState<{
+    id: string
+    slug: string
+    invited: Array<{ id: string; email: string; handle: string }>
+  } | null>(null)
+  const [published, setPublished] = useState<{
+    id: string
+    slug: string
+    title: string
+    splitCount: number
+  } | null>(null)
   const [sent, setSent] = useState<Array<{ id: string; email: string }>>([])
 
   // Steps change state, not the route, so ScrollManager never sees them —
@@ -115,6 +140,22 @@ export function Publish() {
   const priceUsd = free ? 0 : Math.max(0, Number(price) || 0)
   const splitTotal = members.reduce((sum, member) => sum + member.pct, 0)
 
+  // A price is typed in dollars and stored in the asset's smallest units.
+  // Rounded rather than truncated, so 2.99 doesn't quietly become 2.98.
+  const toUnits = (usd: number) =>
+    Math.round(usd * 10 ** session.assetDecimals)
+
+  // Only the files the picker actually holds go up. Anything without one came
+  // from somewhere else and has nothing to upload.
+  const mediaFiles = media
+    .map((item) => item.file)
+    .filter((file) => file !== undefined)
+  const coverIndex = (() => {
+    if (!coverId) return undefined
+    const index = media.findIndex((item) => item.id === coverId)
+    return index >= 0 && media[index]?.file ? index : undefined
+  })()
+
   const canLeaveBuild = build !== null
   const canLeaveDetails = title.trim() !== '' && tagline.trim() !== ''
   const canLeaveSplits = splitTotal === 100
@@ -127,7 +168,7 @@ export function Publish() {
     mountBuild(file, setStage)
       .then((result) => {
         setMounted(result)
-        setBuild({ name: file.name, sizeKb: Math.round(file.size / 1024) })
+        setBuild({ name: file.name, sizeKb: Math.round(file.size / 1024), file })
         if (!title.trim()) {
           setTitle(guessTitle(file.name))
         }
@@ -152,53 +193,73 @@ export function Publish() {
     setFrameLoaded(false)
   }
 
-  function handlePublish() {
-    if (!myStudio) return
+  /**
+   * How the editor's three kinds of person become something the server can
+   * pay. Only the first has an address; the other two name a person and let
+   * the server work out where their money goes, now or when they claim it.
+   */
+  function toSplitInput(member: DraftMember): SplitInput {
+    const base = { role: member.role, pct: member.pct }
+    if (member.kind === 'invite') {
+      return {
+        ...base,
+        email: member.label,
+        handle: member.label.split('@')[0] || member.label,
+      }
+    }
+    if (member.kind === 'teammate' && member.memberId) {
+      return { ...base, studioMemberId: member.memberId, handle: member.label }
+    }
+    return { ...base, wallet: session.address ?? undefined, handle: member.label }
+  }
+
+  async function handlePublish() {
+    if (!myStudio || !build?.file) return
     setPublishing(true)
-    publishGame(
-      {
-        title: title.trim(),
-        tagline: tagline.trim(),
-        description: description.trim() || tagline.trim(),
-        tags: tags.length ? tags : ['unsorted'],
-        priceUsd,
-        coverSeed,
-        coverUrl: media.find((item) => item.id === coverId)?.url,
-        media,
-        splits: members.map((member) => ({
-          handle: member.label,
-          role: member.role,
-          pct: member.pct,
-        })),
-        buildKb: build?.sizeKb || 3200,
-        localBuildEntry: mounted?.entry,
-      },
-      myStudio,
-    ).then((game) => {
-      // Anyone added by email gets an invite pointing at the game they're
-      // already credited on. Their share does not wait for them to accept.
-      // TODO(integration): POST /api/studios/:id/members, which sends the mail.
-      setSent(
-        members
-          .filter((member) => member.kind === 'invite')
-          .map((member) => ({
-            id: createInvite({
-              studioId: myStudio.id,
-              fromHandle: myHandle,
-              email: member.label,
-              game: {
-                title: game.title,
-                slug: game.slug,
-                role: member.role,
-                pct: member.pct,
-              },
-            }).id,
-            email: member.label,
-          })),
-      )
+    setPublishError(null)
+
+    try {
+      // Upload first, unless a previous attempt already got this far. The
+      // build is pinned to IPFS by that call, and re-sending it would pin a
+      // second copy of a game that already exists as a draft.
+      let current = draft
+      if (!current) {
+        const uploaded = await uploadGame({
+          studioId: myStudio.id,
+          title: title.trim(),
+          tagline: tagline.trim(),
+          description: description.trim() || tagline.trim(),
+          tags: tags.length ? tags : ['unsorted'],
+          priceUnits: toUnits(priceUsd),
+          splits: members.map(toSplitInput),
+          build: build.file,
+          media: mediaFiles,
+          coverMediaIndex: coverIndex,
+        })
+        current = {
+          id: uploaded.id,
+          slug: uploaded.slug,
+          invited: uploaded.invited ?? [],
+        }
+        setDraft(current)
+      }
+
+      // The irreversible half: locks the splits, mints the token, writes the
+      // public listing.
+      const game = await publishDraft(current.id)
+
+      setSent(current.invited.map((i) => ({ id: i.id, email: i.email })))
+      setPublished({
+        id: game.id,
+        slug: game.slug,
+        title: game.title,
+        splitCount: members.length,
+      })
+    } catch (error) {
+      setPublishError(errorMessage(error))
+    } finally {
       setPublishing(false)
-      setPublished(game)
-    })
+    }
   }
 
   if (!myStudio) {
@@ -414,11 +475,37 @@ export function Publish() {
           )}
         </div>
 
+        {/* Publishing is two calls: the upload pins the build to IPFS and
+            makes a draft, then publish locks the splits and mints the token.
+            If the second fails the first still happened, and saying so is the
+            difference between "try again" and "did anything happen at all". */}
+        {publishError ? (
+          <div className="mt-6 rounded-card border-2 border-ink border-l-8 border-l-red bg-paper-sunk px-5 py-4">
+            <p className="font-body text-[15px] leading-relaxed">
+              {publishError}
+            </p>
+            {draft ? (
+              <p className="mt-2 font-mono text-[11px] leading-relaxed text-ink-soft">
+                Your build is uploaded and the game exists as a draft. Publishing
+                again finishes it without uploading anything twice.
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {publishing ? (
+          <p className="mt-6 font-mono text-[11px] leading-relaxed text-ink-soft">
+            {draft
+              ? 'Locking the splits and minting the token.'
+              : 'Uploading the build and pinning it. Large builds take a while.'}
+          </p>
+        ) : null}
+
         {/* Nav */}
         <div className="mt-9 flex flex-wrap items-center justify-between gap-4 border-t-2 border-ink pt-5">
           <Button
             variant="ghost"
-            disabled={step === 0}
+            disabled={step === 0 || publishing}
             onClick={() => setStep((step - 1) as StepIndex)}
           >
             Back
@@ -431,7 +518,13 @@ export function Publish() {
               disabled={publishing}
               onClick={handlePublish}
             >
-              {publishing ? 'Publishing…' : 'Publish it'}
+              {publishing
+                ? draft
+                  ? 'Publishing…'
+                  : 'Uploading…'
+                : draft
+                  ? 'Finish publishing'
+                  : 'Publish it'}
             </Button>
           ) : (
             <Button
@@ -687,7 +780,7 @@ function Published({
   invites,
   onGo,
 }: {
-  game: Game
+  game: { title: string; splitCount: number }
   studioId: string
   invites: Array<{ id: string; email: string }>
   onGo: () => void
@@ -701,7 +794,7 @@ function Published({
         </Sticker>
         <h1 className="text-[clamp(32px,5vw,52px)]">{game.title} is up.</h1>
         <p className="max-w-[52ch] font-body text-[17px] leading-relaxed text-ink-soft">
-          {game.splits.length > 1
+          {game.splitCount > 1
             ? 'It’s in the catalog and anyone can play it. Everyone on the splits gets their share from the first sale, including anyone who hasn’t accepted their invite yet.'
             : 'It’s in the catalog and anyone can play it. Every sale lands in your wallet on settlement.'}
         </p>

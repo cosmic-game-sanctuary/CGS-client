@@ -13,11 +13,16 @@ export interface MediaItem {
   id: string
   kind: 'image' | 'video'
   /**
-   * Object URL for a file added in this session. Absent for seeded catalog
-   * games, which fall back to a generated frame from `seed`.
-   * TODO(integration): a real URL from the media upload.
+   * Where to load it from: a gateway URL from the API, or an object URL for a
+   * file picked in this session. Absent for a game with no media of its own,
+   * which falls back to a generated frame from `seed`.
    */
   url?: string
+  /**
+   * The file itself, only while it is being picked in the publish flow. This
+   * is what gets uploaded; the object URL above is only for showing it first.
+   */
+  file?: File
   seed?: number
 }
 
