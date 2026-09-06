@@ -25,7 +25,7 @@ import { ReportDialog } from '@/components/listing/ReportDialog'
 import { ReviewForm } from '@/components/listing/ReviewForm'
 import { getGameWithState, getReviews } from '@/api/games'
 import { mediaFor } from '@/mocks/media'
-import { useSession } from '@/mocks/session'
+import { useSession } from '@/auth/session'
 import type { Game, Review } from '@/mocks/types'
 
 export function GameListing() {

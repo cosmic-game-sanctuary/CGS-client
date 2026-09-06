@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@iconify/react": "^6.0.2",
+    "@privy-io/react-auth": "^3.40.0",
     "@tailwindcss/vite": "^4.3.3",
     "clsx": "^2.1.1",
     "fflate": "^0.8.3",

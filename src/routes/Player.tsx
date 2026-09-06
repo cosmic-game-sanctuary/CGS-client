@@ -4,7 +4,7 @@ import { PLAY_BEATS } from '@/components/play/beats'
 import { LightsDown } from '@/components/play/LightsDown'
 import { ButtonLink } from '@/components/ui/Button'
 import { getGame } from '@/mocks/games'
-import { useSession } from '@/mocks/session'
+import { useSession } from '@/auth/session'
 import type { Game } from '@/mocks/types'
 
 /**

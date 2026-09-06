@@ -25,7 +25,7 @@ import {
 import { cn } from '@/lib/utils'
 import { publishGame, studioById, studioTeam } from '@/mocks/games'
 import { createInvite } from '@/mocks/invites'
-import { useSession } from '@/mocks/session'
+import { useSession } from '@/auth/session'
 import { StudioSetup } from '@/routes/StudioSetup'
 import type { Game, MediaItem } from '@/mocks/types'
 

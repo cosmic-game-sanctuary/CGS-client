@@ -11,7 +11,7 @@ import { Sticker } from '@/components/ui/Sticker'
 import { compactCount, formatDate, truncateAddress } from '@/lib/format'
 import { getStudio, listGamesByStudio } from '@/api/games'
 import { studioCredits } from '@/lib/credits'
-import { useSession } from '@/mocks/session'
+import { useSession } from '@/auth/session'
 import type { Game, Studio as StudioType } from '@/mocks/types'
 
 /**

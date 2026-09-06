@@ -4,7 +4,7 @@ import { Logo } from '@/components/Logo'
 import { NotificationBell } from '@/components/NotificationBell'
 import { ProfileMenu } from '@/components/ProfileMenu'
 import { cn } from '@/lib/utils'
-import { useSession } from '@/mocks/session'
+import { useSession } from '@/auth/session'
 
 /**
  * Browsing never asks for auth (CLAUDE.md §1), so the only thing on the right

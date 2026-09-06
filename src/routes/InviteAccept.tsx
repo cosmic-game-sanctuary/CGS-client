@@ -9,7 +9,7 @@ import { Sticker } from '@/components/ui/Sticker'
 import { cn } from '@/lib/utils'
 import { getGame } from '@/mocks/games'
 import { acceptInvite, declineInvite, useInvite } from '@/mocks/invites'
-import { joinStudio, signIn, useSession } from '@/mocks/session'
+import { joinStudio, signIn, useSession } from '@/auth/session'
 import type { Game } from '@/mocks/types'
 
 /**
@@ -200,7 +200,7 @@ export function InviteAccept() {
               into.
             </p>
             {/* TODO(integration): Privy login, prefilled with the invited address. */}
-            <Button variant="primary" onClick={() => signIn(invite.email)}>
+            <Button variant="primary" onClick={() => signIn()}>
               Sign in
             </Button>
           </div>
@@ -243,7 +243,7 @@ export function InviteAccept() {
                   acceptInvite(invite.id, handle)
                     .then((accepted) => {
                       if (accepted) {
-                        joinStudio(accepted.studioId, accepted.handle)
+                        joinStudio()
                       }
                     })
                     .finally(() => setBusy(null))

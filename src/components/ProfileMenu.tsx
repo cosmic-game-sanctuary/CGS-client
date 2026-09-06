@@ -4,8 +4,8 @@ import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/Button'
 import { formatPrice } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { studioById } from '@/mocks/games'
-import { fund, signIn, signOut, useSession } from '@/mocks/session'
+import { errorMessage } from '@/lib/api'
+import { fund, signIn, signOut, useSession } from '@/auth/session'
 
 /**
  * Everything about you, behind one control.
@@ -25,6 +25,8 @@ import { fund, signIn, signOut, useSession } from '@/mocks/session'
 export function ProfileMenu() {
   const session = useSession()
   const [open, setOpen] = useState(false)
+  const [funding, setFunding] = useState(false)
+  const [fundError, setFundError] = useState<string | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -43,17 +45,34 @@ export function ProfileMenu() {
     }
   }, [open])
 
+  // Privy is restoring a session it may already have. Holding the control's
+  // shape stops the header flickering from Sign in to signed-in on every load.
+  if (!session.ready) {
+    return <span className="h-8 w-24 rounded-chip border-2 border-ink-faint" />
+  }
+
   if (!session.signedIn) {
     return (
-      // TODO(integration): Privy login. Buying signs you in on the way through,
-      // so this is a convenience and never a gate on browsing.
-      <Button size="sm" variant="neutral" onClick={() => signIn('you@example.com')}>
+      // Buying signs you in on the way through, so this is a convenience and
+      // never a gate on browsing.
+      <Button size="sm" variant="neutral" onClick={() => signIn()}>
         Sign in
       </Button>
     )
   }
 
-  const studio = session.studioId ? studioById(session.studioId) : undefined
+  async function addFunds() {
+    setFunding(true)
+    setFundError(null)
+    try {
+      await fund()
+    } catch (error) {
+      setFundError(errorMessage(error))
+    } finally {
+      setFunding(false)
+    }
+  }
+
   const initial = (session.email ?? '?').charAt(0).toUpperCase()
   const owned = session.ownedGameIds.length
 
@@ -100,26 +119,50 @@ export function ProfileMenu() {
               {session.email}
             </span>
             <div className="mt-2 flex items-center justify-between gap-2">
-              <span className="font-mono tnum text-lg font-bold text-green">
-                {formatPrice(session.balanceUsd)}
+              <span
+                className={cn(
+                  'font-mono tnum text-lg font-bold',
+                  session.error ? 'text-ink-faint' : 'text-green',
+                )}
+              >
+                {session.error ? '—' : formatPrice(session.balanceUsd)}
               </span>
               <button
                 type="button"
-                onClick={() => fund(10)}
-                className="flex cursor-pointer items-center gap-1 rounded-chip border-2 border-ink bg-paper px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-transform duration-130 hover:-translate-y-px active:translate-y-px"
+                onClick={addFunds}
+                disabled={funding}
+                className="flex cursor-pointer items-center gap-1 rounded-chip border-2 border-ink bg-paper px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-transform duration-130 hover:-translate-y-px active:translate-y-px disabled:cursor-default disabled:opacity-50 disabled:hover:translate-y-0"
               >
                 <Plus size={11} strokeWidth={3.5} />
-                Add funds
+                {funding ? 'Adding…' : 'Add funds'}
               </button>
             </div>
+            {/* The first top-up also creates the Hedera account behind the
+                wallet, which takes a few seconds longer than the rest. */}
+            {funding ? (
+              <p className="mt-2 font-mono text-[10px] text-ink-soft">
+                Moving real testnet funds. This takes a moment.
+              </p>
+            ) : null}
+            {fundError ? (
+              <p className="mt-2 font-mono text-[10px] text-red">{fundError}</p>
+            ) : null}
+            {/* Signed in with Privy, but the server won't say who that is.
+                Without this the balance just reads zero, which looks like a
+                new wallet rather than a broken one. */}
+            {session.error ? (
+              <p className="mt-2 font-mono text-[10px] leading-relaxed text-red">
+                {session.error}
+              </p>
+            ) : null}
           </div>
 
           <nav className="flex flex-col p-1.5">
             <Item to="/library" label="Your games" hint={owned ? `${owned}` : 'none yet'} onGo={() => setOpen(false)} />
             <Item
-              to={studio ? `/studio/${studio.id}` : '/studio/new'}
-              label={studio ? 'Your studio' : 'Set up a studio'}
-              hint={studio ? studio.name : 'to publish'}
+              to={session.studioId ? `/studio/${session.studioId}` : '/studio/new'}
+              label={session.studioId ? 'Your studio' : 'Set up a studio'}
+              hint={session.studioName ?? 'to publish'}
               onGo={() => setOpen(false)}
             />
             <Item to="/publish" label="Publish a game" onGo={() => setOpen(false)} />

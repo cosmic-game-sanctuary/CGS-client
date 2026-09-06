@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { PriceChip } from '@/components/ui/PriceChip'
 import { formatPrice } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { fund, grantKey, signIn, useSession } from '@/mocks/session'
+import { fund, grantKey, signIn, useSession } from '@/auth/session'
 import type { Game } from '@/mocks/types'
 
 /**
@@ -20,7 +20,7 @@ import type { Game } from '@/mocks/types'
  * and covers the settlement wait, so the latency reads as staging rather than
  * as a spinner. Beat timings come straight from the spec.
  *
- * No Privy, no chain, no x402 — every step is faked in `@/mocks/session`.
+ * No Privy, no chain, no x402 — every step is faked in `@/auth/session`.
  * The seams are marked TODO(integration).
  */
 
@@ -54,10 +54,7 @@ export function CheckoutOverlay({
   const lightsDown = phase === 'paying'
   const dismissable = !lightsDown
 
-  const beats = useMemo(
-    () => PURCHASE_BEATS(() => grantKey(game.id, game.priceUsd)),
-    [game.id, game.priceUsd],
-  )
+  const beats = useMemo(() => PURCHASE_BEATS(() => grantKey(game.id)), [game.id])
 
   // Clear any in-flight beat timers if the overlay goes away mid-sequence.
   useEffect(() => {
@@ -98,7 +95,7 @@ export function CheckoutOverlay({
     setBusy(true)
     // TODO(integration): Privy email login, embedded wallet created on login.
     after(600, () => {
-      signIn(email.trim())
+      signIn()
       setBusy(false)
       setPhase(game.priceUsd > 0 ? 'funding' : 'confirm')
     })
@@ -108,7 +105,7 @@ export function CheckoutOverlay({
     setBusy(true)
     // TODO(integration): Privy's built-in funding flow.
     after(850, () => {
-      fund(amount)
+      void fund(amount)
       setBusy(false)
       setPhase('confirm')
     })

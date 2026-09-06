@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
 import { addReview } from '@/mocks/games'
-import { useSession } from '@/mocks/session'
+import { useSession } from '@/auth/session'
 import type { Review } from '@/mocks/types'
 
 /**

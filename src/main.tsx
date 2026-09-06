@@ -1,6 +1,7 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from '@/App'
+import { PrivyBoot } from '@/auth/PrivyBoot'
 import { dropAppServiceWorkers } from '@/lib/previewHost'
 import '@/styles/tokens.css'
 
@@ -12,6 +13,8 @@ void dropAppServiceWorkers()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <PrivyBoot>
+      <App />
+    </PrivyBoot>
   </StrictMode>,
 )

@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Sticker } from '@/components/ui/Sticker'
 import { cn } from '@/lib/utils'
 import { createStudio, ENS_PARENT, ensTaken } from '@/mocks/games'
-import { joinStudio, useSession } from '@/mocks/session'
+import { joinStudio, useSession } from '@/auth/session'
 
 /**
  * Making a studio. You need one before you can publish, and it is the only
@@ -45,8 +45,8 @@ export function StudioSetup({
       ensLabel: cleanLabel || undefined,
       bio,
     })
-      .then((studio) => {
-        joinStudio(studio.id, handle.trim())
+      .then(() => {
+        joinStudio()
         onDone?.()
       })
       .finally(() => setBusy(false))

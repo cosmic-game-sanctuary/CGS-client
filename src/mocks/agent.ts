@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { games } from './games'
 import { notify } from './notifications'
-import { grantKey } from './session'
+import { grantKey } from '@/auth/session'
 
 /**
  * Mock wishlist agent.
@@ -189,7 +189,7 @@ export function simulatePriceDrop(
     return 'broke'
   }
 
-  grantKey(game.id, 0) // the agent paid, not the buyer's own wallet
+  grantKey(game.id) // the agent paid, not the buyer's own wallet
   notify({
     kind: 'agent',
     title: `Your agent bought ${game.title}`,

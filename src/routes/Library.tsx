@@ -11,7 +11,7 @@ import { Reveal } from '@/components/ui/Reveal'
 import { useAgents } from '@/mocks/agent'
 import { listGames } from '@/mocks/games'
 import { formatPrice } from '@/lib/format'
-import { useSession } from '@/mocks/session'
+import { useSession } from '@/auth/session'
 import type { Game } from '@/mocks/types'
 
 /**
