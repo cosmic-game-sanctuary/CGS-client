@@ -5,21 +5,22 @@
  * names and the same return types, so the screens above them did not have to
  * change shape to use them.
  *
- * Note which endpoints take which key: only `GET /api/games/:idOrSlug` and
- * `GET /api/studios/:idOrSlug` accept a slug. Reviews, download, owned, pay,
- * publish and sessions are all keyed by the game's UUID, so anything that
- * needs them chains off the detail response rather than off the URL.
+ * ~~Only the two detail routes accept a slug.~~ **Every `/api/games/:id/…`
+ * route takes one now** — several used to answer 500 for a slug, so
+ * `/api/games/deadzone/reviews` was a server error while `/api/games/deadzone`
+ * worked. The calls below still chain off the detail response for their ids,
+ * which costs nothing and keeps one lookup as the single source of the game;
+ * the constraint that forced it is simply gone.
  */
 import { request, requestOptional } from '@/lib/api'
-import { adaptGame, adaptReview, adaptStudio } from '@/api/adapt'
+import { adaptGame, adaptStudio } from '@/api/adapt'
 import type {
   WireCatalog,
   WireGame,
-  WireReviewPage,
   WireStudio,
   WireStudioGame,
 } from '@/api/wire'
-import type { CatalogQuery, Game, Review, Studio } from '@/mocks/types'
+import type { CatalogQuery, Game, Studio } from '@/mocks/types'
 
 export interface CatalogPage {
   games: Game[]
@@ -66,7 +67,15 @@ export async function getGame(
 export async function getGameWithState(
   idOrSlug: string,
   signal?: AbortSignal,
-): Promise<{ game: Game; owned: boolean; liked: boolean } | undefined> {
+): Promise<
+  | {
+      game: Game
+      owned: boolean
+      wishlisted: boolean
+      wishlistCount: number
+    }
+  | undefined
+> {
   const wire = await requestOptional<WireGame>(
     `/api/games/${encodeURIComponent(idOrSlug)}`,
     { signal },
@@ -75,24 +84,17 @@ export async function getGameWithState(
   return {
     game: adaptGame(wire),
     owned: wire.owned ?? false,
-    liked: wire.liked ?? false,
+    // `liked` is the same flag under its older name, kept so nothing that
+    // predates the wishlist broke. Either is correct; prefer the new one.
+    wishlisted: wire.wishlisted ?? wire.liked ?? false,
+    wishlistCount: wire.wishlistCount ?? wire.likeCount ?? 0,
   }
-}
-
-/** Keyed by UUID, not slug. */
-export async function getReviews(
-  gameId: string,
-  signal?: AbortSignal,
-): Promise<Review[]> {
-  const page = await request<WireReviewPage>(
-    `/api/games/${gameId}/reviews`,
-    { query: { limit: 50 }, signal },
-  )
-  return page.reviews.map(adaptReview)
 }
 
 export interface StudioProfile {
   studio: Studio
+  /** Whose studio it is. Compared against the session to gate the roster. */
+  ownerUserId: string
   /** Every game the studio has, including drafts. Filter by status to taste. */
   games: WireStudioGame[]
   members: WireStudio['members']
@@ -109,6 +111,7 @@ export async function getStudio(
   if (!wire) return undefined
   return {
     studio: adaptStudio(wire),
+    ownerUserId: wire.ownerUserId,
     games: wire.games,
     members: wire.members,
   }

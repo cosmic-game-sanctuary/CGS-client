@@ -79,6 +79,8 @@ export function adaptGame(wire: WireGame): Game {
     reviewCount: wire.reviewCount,
     plays: wire.plays,
     buildKb: wire.buildKb ?? 0,
+    status: wire.status,
+    buildVersion: wire.buildVersion,
   }
 }
 
@@ -86,12 +88,18 @@ export function adaptReview(wire: WireReview): Review {
   return {
     id: wire.id,
     gameId: wire.gameId,
-    // Already truncated server-side. Truncating again would eat the ellipsis.
+    // Ready to print. It used to be a truncated address for everyone, so
+    // anything downstream that truncates it again will mangle a real name.
     author: wire.author,
     authorIsEns: wire.authorIsEns,
+    authorUserId: wire.userId,
+    authorHandle: wire.authorProfile?.handle ?? null,
+    authorAvatarUrl: wire.authorProfile?.avatarUrl ?? null,
     rating: wire.rating,
     body: wire.body,
     createdAt: wire.createdAt,
+    developerReply: wire.developerReply ?? null,
+    developerReplyAt: wire.developerReplyAt ?? null,
   }
 }
 

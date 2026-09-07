@@ -3,7 +3,8 @@ import { Freehand } from '@/components/icons/Freehand'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { cn } from '@/lib/utils'
-import { submitReport } from '@/mocks/games'
+import { reportGame } from '@/api/social'
+import { errorMessage } from '@/lib/api'
 
 const REASONS = [
   'Stolen or reuploaded work',
@@ -30,12 +31,23 @@ export function ReportDialog({
   const [detail, setDetail] = useState('')
   const [sending, setSending] = useState(false)
   const [done, setDone] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
 
-  function send() {
+  async function send() {
     setSending(true)
-    submitReport({ gameId, reason, detail: detail.trim() })
-      .then(() => setDone(true))
-      .finally(() => setSending(false))
+    setProblem(null)
+    try {
+      // The server takes one `reason` string, so the free-text detail is
+      // appended to the chosen reason rather than dropped. A moderator reading
+      // this later needs the sentence more than the category.
+      const note = detail.trim()
+      await reportGame(gameId, note ? `${reason} — ${note}` : reason)
+      setDone(true)
+    } catch (error) {
+      setProblem(errorMessage(error))
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -84,7 +96,11 @@ export function ReportDialog({
           />
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Button variant="primary" disabled={!reason || sending} onClick={send}>
+            <Button
+              variant="primary"
+              disabled={!reason || sending}
+              onClick={() => void send()}
+            >
               {sending ? 'Sending…' : 'Send report'}
             </Button>
             <Button variant="ghost" onClick={onClose}>
@@ -95,6 +111,11 @@ export function ReportDialog({
             Reported games come out of the catalog straight away, before anyone
             reads this.
           </p>
+          {problem ? (
+            <p role="alert" className="mt-3 font-body text-sm text-red">
+              {problem}
+            </p>
+          ) : null}
         </>
       )}
     </Modal>

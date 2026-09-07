@@ -803,7 +803,7 @@ function Published({
             View the listing
           </Button>
           <ButtonLink to={`/studio/${studioId}`} variant="neutral" size="lg">
-            Your studio
+            My studio
           </ButtonLink>
         </div>
         {invites.length > 0 ? (

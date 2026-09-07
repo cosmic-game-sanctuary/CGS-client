@@ -44,7 +44,7 @@ export function NotFound() {
                 Browse the catalog
               </ButtonLink>
               <ButtonLink to="/library" variant="ghost">
-                Your games
+                My games
               </ButtonLink>
             </div>
           </div>

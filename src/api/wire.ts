@@ -18,10 +18,31 @@ export interface WireStudioRef {
   ownerAddress?: string | null
 }
 
+/**
+ * Who a person is, wherever the server names one: a review author, a comment
+ * author, a credit on a game. `label` is what to print — the server already
+ * does the display-name then handle then address fallback, and reimplementing
+ * it here is how the two drift.
+ */
+export interface WireProfile {
+  handle: string | null
+  displayName: string | null
+  avatarUrl: string | null
+  address: string
+  label: string
+}
+
 export interface WireSplit {
+  /** The name on *this* game's credits. Per game on purpose. */
   handle: string
   role: string
   pct: number
+  /**
+   * The person behind that name, and null when there isn't one yet. An
+   * invited collaborator is credited and paid from the first sale whether or
+   * not they ever open the site.
+   */
+  profile?: WireProfile | null
 }
 
 export interface WireMedia {
@@ -54,13 +75,29 @@ export interface WireGame {
   rating: number
   reviewCount: number
   plays: number
+  /**
+   * The same number twice. Likes became a wishlist, and both names are sent so
+   * nothing broke; prefer `wishlistCount` in anything new.
+   */
   likeCount: number
+  wishlistCount?: number
   buildKb: number | null
+  /**
+   * The listing's own state. Nothing outside a studio page could see this
+   * before, and a client that may be allowed to manage a game needs to know
+   * whether it is a draft, live, or unlisted.
+   */
+  status?: 'draft' | 'published' | 'delisted' | 'removed'
+  updatedAt?: string | null
+  /** Bumped by every patch the developer ships. A key covers all of them. */
+  buildVersion?: number
+  delistedBy?: string | null
   /** Detail only. */
   media?: WireMedia[]
   /** Detail only, and only when signed in. */
   owned?: boolean
   liked?: boolean
+  wishlisted?: boolean
 }
 
 export interface WireCatalog {
@@ -76,9 +113,17 @@ export interface WireReview {
   body: string
   createdAt: string
   editedAt: string | null
-  /** Already truncated by the server. Do not truncate again. */
+  /**
+   * Ready to print. Used to be a truncated address for everyone; it is the
+   * person's real name now, when they have one. Do not truncate it again.
+   */
   author: string
   authorIsEns: boolean
+  /** The person behind that name, for linking. Null if they never signed in. */
+  authorProfile?: WireProfile | null
+  /** The studio's answer, when there is one. One per review, on the review. */
+  developerReply?: string | null
+  developerReplyAt?: string | null
 }
 
 export interface WireReviewPage {

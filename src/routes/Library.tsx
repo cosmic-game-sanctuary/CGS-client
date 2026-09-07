@@ -9,6 +9,8 @@ import { PlayOverlay } from '@/components/play/LightsDown'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { Reveal } from '@/components/ui/Reveal'
 import { useAgents } from '@/mocks/agent'
+import { WishlistSection } from '@/components/library/WishlistSection'
+import { Receipts } from '@/components/library/Receipts'
 import { getGame, listGames } from '@/api/games'
 import { getLibrary, type WireLibraryGame } from '@/api/library'
 import { errorMessage } from '@/lib/api'
@@ -92,7 +94,7 @@ export function Library() {
       <SiteHeader />
 
       <main className="mx-auto w-full max-w-page flex-1 px-6 py-9">
-        <h1 className="text-[clamp(30px,4.4vw,44px)]">Your games</h1>
+        <h1 className="text-[clamp(30px,4.4vw,44px)]">My games</h1>
         <p className="mt-2 max-w-[52ch] font-body text-ink-soft">
           Every key here is in your own wallet. They work whether or not this
           site is still around.
@@ -163,6 +165,8 @@ export function Library() {
             ))}
           </Reveal>
         )}
+        <WishlistSection signedIn={session.signedIn} />
+
         {watching.length > 0 ? (
           <section className="mt-12">
             <div className="flex items-baseline gap-3">
@@ -195,6 +199,8 @@ export function Library() {
             </ul>
           </section>
         ) : null}
+
+        <Receipts signedIn={session.signedIn} />
       </main>
 
       <SiteFooter />

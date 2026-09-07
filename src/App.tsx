@@ -4,6 +4,8 @@ import { Catalog } from '@/routes/Catalog'
 import { GameListing } from '@/routes/GameListing'
 import { InviteAccept } from '@/routes/InviteAccept'
 import { Library } from '@/routes/Library'
+import { Profile } from '@/routes/Profile'
+import { ManageGame } from '@/routes/ManageGame'
 import { NotFound } from '@/routes/NotFound'
 import { Player } from '@/routes/Player'
 import { Publish } from '@/routes/Publish'
@@ -17,11 +19,13 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Catalog />} />
         <Route path="/game/:slug" element={<GameListing />} />
+        <Route path="/game/:slug/manage" element={<ManageGame />} />
         <Route path="/play/:slug" element={<Player />} />
         <Route path="/publish" element={<Publish />} />
         <Route path="/studio/new" element={<StudioSetup />} />
         <Route path="/studio/:id" element={<Studio />} />
         <Route path="/library" element={<Library />} />
+        <Route path="/u/:handle" element={<Profile />} />
         {/* Where an emailed invite lands. Reachable signed out, like everything
             else; signing in is only asked for at the point of claiming. */}
         <Route path="/invite/:id" element={<InviteAccept />} />

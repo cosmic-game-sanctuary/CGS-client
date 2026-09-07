@@ -81,6 +81,16 @@ export interface Game {
   /** Rough build size, shown so the "no install" claim is concrete. */
   buildKb: number
   /**
+   * Where this listing stands. Absent on anything that came from a mock.
+   *
+   * Worth carrying even though the catalog only ever shows `published`: the
+   * library keeps a game you own after it leaves the catalog, and "delisted"
+   * is a different sentence from "still on sale".
+   */
+  status?: 'draft' | 'published' | 'delisted' | 'removed'
+  /** Bumped by every patch the developer ships. Your key covers all of them. */
+  buildVersion?: number
+  /**
    * Entry URL of a build mounted in this browser session, which is the dev's
    * own zip on the publish screen before it exists anywhere else.
    *
@@ -94,12 +104,24 @@ export interface Game {
 export interface Review {
   id: string
   gameId: string
-  /** ENS name if the reviewer has one, else a truncated address. */
+  /**
+   * Ready to print, as the server resolved it: display name, then handle, then
+   * a truncated address. It used to be an address for everyone, which is why
+   * anything that truncates it again is now wrong.
+   */
   author: string
   authorIsEns: boolean
+  /** Whose it is. Compared against the session to offer a delete. */
+  authorUserId?: string | null
+  /** Their profile, when they have one. What makes the name a link. */
+  authorHandle?: string | null
+  authorAvatarUrl?: string | null
   rating: number
   body: string
   createdAt: string
+  /** The studio's answer. One per review, and it overwrites rather than threads. */
+  developerReply?: string | null
+  developerReplyAt?: string | null
 }
 
 export type SortKey = 'newest' | 'price-low' | 'price-high' | 'rating'

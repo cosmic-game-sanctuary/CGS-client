@@ -71,6 +71,16 @@ export function GameCard({
         </div>
       </div>
 
+      {/* Top left, so it never collides with the sticker on the right. Only a
+          studio's own people ever see one of these: the catalog is published
+          games only, and a listing that is not live is a fact about work in
+          progress rather than something to advertise. */}
+      {game.status && game.status !== 'published' ? (
+        <span className="label-micro absolute top-2.5 left-2.5 rounded-chip border-2 border-ink bg-paper px-2 py-0.5 text-ink shadow-hard-sm">
+          {game.status === 'draft' ? 'Draft' : 'Unlisted'}
+        </span>
+      ) : null}
+
       {game.sticker ? (
         <Sticker
           className={cn(

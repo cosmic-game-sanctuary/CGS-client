@@ -2,7 +2,9 @@ import { Star } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
-import { addReview } from '@/mocks/games'
+import { postReview } from '@/api/social'
+import { adaptReview } from '@/api/adapt'
+import { errorMessage } from '@/lib/api'
 import { useSession } from '@/auth/session'
 import type { Review } from '@/mocks/types'
 
@@ -23,21 +25,24 @@ export function ReviewForm({
   const [hover, setHover] = useState(0)
   const [body, setBody] = useState('')
   const [posting, setPosting] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
 
   const shown = hover || rating
   const ready = rating > 0 && body.trim().length > 3
 
-  function post() {
+  async function post() {
     setPosting(true)
-    addReview({
-      gameId,
-      author: session.email?.split('@')[0] ?? 'you',
-      authorIsEns: false,
-      rating,
-      body: body.trim(),
-    })
-      .then(onPosted)
-      .finally(() => setPosting(false))
+    setProblem(null)
+    try {
+      // The server re-checks ownership against the chain. This form only ever
+      // renders for an owner, but that is a rendering decision and the gate
+      // has to be somewhere a stranger can trust.
+      onPosted(adaptReview(await postReview(gameId, { rating, body: body.trim() })))
+    } catch (error) {
+      setProblem(errorMessage(error))
+    } finally {
+      setPosting(false)
+    }
   }
 
   return (
@@ -89,14 +94,23 @@ export function ReviewForm({
       />
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <Button variant="primary" disabled={!ready || posting} onClick={post}>
+        <Button
+          variant="primary"
+          disabled={!ready || posting}
+          onClick={() => void post()}
+        >
           {posting ? 'Posting…' : 'Post review'}
         </Button>
         <span className="font-mono text-[11px] text-ink-soft">
-          Posted as {session.email?.split('@')[0] ?? 'you'}. You can only review
-          this once.
+          Posted as {session.label ?? 'you'}.
         </span>
       </div>
+
+      {problem ? (
+        <p role="alert" className="mt-3 font-body text-sm text-red">
+          {problem}
+        </p>
+      ) : null}
     </div>
   )
 }

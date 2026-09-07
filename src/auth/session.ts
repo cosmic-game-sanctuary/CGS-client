@@ -23,7 +23,19 @@ export interface SessionState {
   /** False until Privy has finished restoring any existing session. */
   ready: boolean
   signedIn: boolean
+  /** Our own user id, not Privy's. What ownership rows point at. */
+  userId: string | null
   email: string | null
+  /**
+   * Your public name, and the address of your profile page. Distinct from
+   * `handle` below, which is what a *studio* calls you on its credits: a
+   * person can be `@sable` here and "sable (music)" on one game.
+   */
+  userHandle: string | null
+  displayName: string | null
+  /** What to print. Resolved by the server, never re-derived here. */
+  label: string | null
+  avatarUrl: string | null
   /** The embedded wallet Privy made for you. */
   address: string | null
   /** Null until that wallet has received value. See the funding step. */
@@ -31,6 +43,12 @@ export interface SessionState {
   /** Display only. `balanceUnits` is the integer everything else uses. */
   balanceUsd: number
   balanceUnits: number
+  /**
+   * HBAR, separately, because it cannot buy anything here. The facilitator
+   * pays the fee on a purchase and the operator pays it on a withdrawal, so
+   * this is only ever what opened the account.
+   */
+  hbar: number
   /**
    * Decimals of the settlement asset. Needed to turn a price someone typed
    * into the integer units the API wants, and there is nowhere else to learn
@@ -44,6 +62,12 @@ export interface SessionState {
   /** Your handle inside that studio: what appears on splits and credits. */
   handle: string | null
   /**
+   * Every studio you own or joined. `studioId` above is the primary one; being
+   * credited on games from several teams is exactly what inviting a
+   * collaborator by email produces.
+   */
+  studios: { id: string; name: string; slug: string; role: 'owner' | 'member' }[]
+  /**
    * Why `/api/me` could not be read, when it could not.
    *
    * Worth surfacing rather than swallowing: a failed read leaves every field
@@ -56,16 +80,23 @@ export interface SessionState {
 export const EMPTY_SESSION: SessionState = {
   ready: false,
   signedIn: false,
+  userId: null,
   email: null,
+  userHandle: null,
+  displayName: null,
+  label: null,
+  avatarUrl: null,
   address: null,
   hederaAccountId: null,
   balanceUsd: 0,
   balanceUnits: 0,
+  hbar: 0,
   assetDecimals: 6,
   ownedGameIds: [],
   studioId: null,
   studioName: null,
   handle: null,
+  studios: [],
   error: null,
 }
 

@@ -88,7 +88,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       cancelled = true
       controller.abort()
     }
-  }, [userId, refreshTick])
+    // `privyAddress` is in here on purpose. The retries above are a guess at
+    // how long Privy takes to report a brand new embedded wallet; this is the
+    // answer. The moment Privy tells *us* the wallet exists, ask the server
+    // again — which turns "no embedded wallet, sign out and back in" from a
+    // dead end into a message that clears itself a second later.
+  }, [userId, refreshTick, privyAddress])
 
   const refresh = useCallback(() => setRefreshTick((n) => n + 1), [])
 
@@ -121,11 +126,19 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       signedIn: authenticated,
       // Privy knows the email before /api/me answers, so the header fills in
       // on the first frame rather than a beat later.
+      userId: me?.id ?? null,
       email: me?.email ?? user?.email?.address ?? null,
+      userHandle: me?.handle ?? null,
+      displayName: me?.displayName ?? null,
+      // Falls back to the email for the same reason: something has to be on
+      // screen before the server answers, and the email is what Privy knows.
+      label: me?.label ?? user?.email?.address ?? null,
+      avatarUrl: me?.avatarUrl ?? null,
       address: me?.evmAddress ?? privyAddress,
       hederaAccountId: me?.hederaAccountId ?? null,
       balanceUsd: me?.balanceUsd ?? 0,
       balanceUnits: me?.balanceUnits ? Number(me.balanceUnits) : 0,
+      hbar: me?.hbar ?? 0,
       assetDecimals: me?.balanceAssetDecimals ?? 6,
       // Keyed to the user, so signing out or switching accounts cannot leave
       // the previous person's keys on screen.
@@ -134,6 +147,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       studioId: me?.studio?.id ?? null,
       studioName: me?.studio?.name ?? null,
       handle: me?.studio?.handle ?? null,
+      studios: me?.studios ?? [],
       error: current?.error ?? null,
     }),
     [ready, authenticated, me, current, user, userId, justBought, privyAddress],

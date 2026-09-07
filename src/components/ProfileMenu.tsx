@@ -12,10 +12,10 @@ import { fund, signIn, signOut, useSession } from '@/auth/session'
  *
  * The information architecture, so it doesn't drift:
  *
- * - **Your games** (`/library`) — keys you hold, plus triggers you've set.
+ * - **My games** (`/library`) — keys you hold, plus triggers you've set.
  *   A trigger is a game you're trying to get, so it belongs next to the ones
  *   you got. That's why there's no separate agents page.
- * - **Your studio** (`/studio/:id`) — what you made, and who made it with you.
+ * - **My studio** (`/studio/:id`) — what you made, and who made it with you.
  *   Team and credits live there because they're public facts about the studio,
  *   not private settings.
  * - **Publish** (`/publish`) — an action, not a place. A menu item, not a tab.
@@ -88,7 +88,11 @@ export function ProfileMenu() {
     }
   }
 
-  const initial = (session.email ?? '?').charAt(0).toUpperCase()
+  // `label` is the server's answer to "what do we call this person" — display
+  // name, else handle, else email. Deriving it here as well is how the two end
+  // up disagreeing on the one screen that shows your own name back to you.
+  const name = session.label ?? session.email
+  const initial = (name ?? '?').charAt(0).toUpperCase()
   const owned = session.ownedGameIds.length
 
   return (
@@ -131,7 +135,7 @@ export function ProfileMenu() {
               className="block truncate font-mono text-[12px] font-semibold"
               title={session.email ?? undefined}
             >
-              {session.email}
+              {name}
             </span>
             <div className="mt-2 flex items-center justify-between gap-2">
               <span
@@ -180,10 +184,21 @@ export function ProfileMenu() {
           </div>
 
           <nav className="flex flex-col p-1.5">
-            <Item to="/library" label="Your games" hint={owned ? `${owned}` : 'none yet'} onGo={() => setOpen(false)} />
+            <Item to="/library" label="My games" hint={owned ? `${owned}` : 'none yet'} onGo={() => setOpen(false)} />
+            {/* A public page, like a studio's, not a settings screen. It goes
+                here because this is where you look for anything about you,
+                and nowhere else in the app knows your handle. */}
+            {session.userHandle ? (
+              <Item
+                to={`/u/${session.userHandle}`}
+                label="My profile"
+                hint={`@${session.userHandle}`}
+                onGo={() => setOpen(false)}
+              />
+            ) : null}
             <Item
               to={session.studioId ? `/studio/${session.studioId}` : '/studio/new'}
-              label={session.studioId ? 'Your studio' : 'Set up a studio'}
+              label={session.studioId ? 'My studio' : 'Set up a studio'}
               hint={session.studioName ?? 'to publish'}
               onGo={() => setOpen(false)}
             />

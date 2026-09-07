@@ -1,4 +1,13 @@
-import { Banknote, Bell, Radar, Rocket, UserPlus } from 'lucide-react'
+import {
+  Banknote,
+  Bell,
+  Hourglass,
+  MessageSquare,
+  Radar,
+  Rocket,
+  TrendingDown,
+  UserPlus,
+} from 'lucide-react'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { formatPrice, timeAgo } from '@/lib/format'
@@ -28,9 +37,16 @@ const KIND: Record<
   { icon: typeof Bell; className: string; label: string }
 > = {
   sale: { icon: Banknote, className: 'bg-green text-paper', label: 'Sale' },
+  // Money that exists and hasn't moved. Yellow rather than green: green is the
+  // colour of a settled transfer, and saying this one settled would be a lie.
+  held: { icon: Hourglass, className: 'bg-yellow text-ink', label: 'Held' },
   invite: { icon: UserPlus, className: 'bg-pink text-paper', label: 'Invite' },
   agent: { icon: Radar, className: 'bg-blue text-paper', label: 'Agent' },
   live: { icon: Rocket, className: 'bg-ink text-paper', label: 'Published' },
+  // Red is "act now" in this palette, and a price drop on something you saved
+  // is the only row here that is genuinely time-sensitive.
+  deal: { icon: TrendingDown, className: 'bg-red text-paper', label: 'Price drop' },
+  reply: { icon: MessageSquare, className: 'bg-ink text-paper', label: 'Reply' },
 }
 
 export function NotificationBell() {

@@ -27,6 +27,21 @@ export type ApiErrorCode =
   /** The frozen transaction aged out before it settled. Nothing was charged. */
   | 'PAYMENT_INTENT_EXPIRED'
   | 'PAYMENT_SIGNATURE_INVALID'
+  /**
+   * A body bigger than the server accepts, and a body that isn't JSON. Both
+   * used to arrive as `INTERNAL`, including for an oversized build upload,
+   * which is the one case where a person can actually do something about it.
+   */
+  | 'PAYLOAD_TOO_LARGE'
+  | 'MALFORMED_JSON'
+  /** Managing a game: under moderation, already sold, or an agent is watching. */
+  | 'MODERATION_HOLD'
+  | 'GAME_HAS_SALES'
+  | 'GAME_IS_WATCHED'
+  /** A founder can't be removed, demoted, or leave. They transfer instead. */
+  | 'IS_FOUNDER'
+  /** A cloud save changed elsewhere since you read it. `details` has both sides. */
+  | 'SAVE_CONFLICT'
   | 'RATE_LIMITED'
   | 'INTERNAL'
   | 'NETWORK'

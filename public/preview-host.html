@@ -113,10 +113,60 @@
           })
         }
 
+        // Cloud saves.
+        //
+        // A build writes its progress to localStorage on THIS origin, not the
+        // app's, which is the whole reason it is isolated here. That also means
+        // the app cannot read it: reaching across origins is exactly what the
+        // separation exists to prevent. This page can, because it is the one
+        // thing that lives on both sides of that line.
+        //
+        // The whole origin is snapshotted rather than a namespaced subset,
+        // because the keys belong to the game and we never parse them. Only
+        // one build runs at a time, so a restore clears first and there is
+        // nothing of anyone else's to lose.
+        function saves(command) {
+          try {
+            if (command.op === 'snapshot') {
+              var out = {}
+              for (var i = 0; i < localStorage.length; i++) {
+                var key = localStorage.key(i)
+                out[key] = localStorage.getItem(key)
+              }
+              return { entries: out }
+            }
+
+            if (command.op === 'restore') {
+              localStorage.clear()
+              var entries = command.entries || {}
+              for (var name in entries) {
+                if (Object.prototype.hasOwnProperty.call(entries, name)) {
+                  localStorage.setItem(name, entries[name])
+                }
+              }
+              return { restored: Object.keys(entries).length }
+            }
+          } catch (error) {
+            // A browser with site data blocked. The game still runs, it just
+            // will not carry progress, and that is not worth failing a boot.
+            return { error: reason(error) }
+          }
+          return null
+        }
+
         window.addEventListener('message', function (event) {
           if (!app || event.origin !== app) return
           var command = event.data
           if (!command || command.source !== 'cgs-preview-app') return
+
+          // Storage is synchronous and has no cache to open, so it answers
+          // straight away rather than going through run().
+          var storage = saves(command)
+          if (storage !== null) {
+            post({ kind: 'done', ticket: command.ticket, result: storage })
+            return
+          }
+
           run(command).then(
             function () {
               post({ kind: 'done', ticket: command.ticket })

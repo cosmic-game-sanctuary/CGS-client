@@ -4,6 +4,7 @@ import { BuildFrame } from '@/components/BuildFrame'
 import { Cover } from '@/components/Cover'
 import { cn } from '@/lib/utils'
 import { endSession, startSession } from '@/api/purchase'
+import { pullSave, pushSave, type SaveSession } from '@/lib/cloudSaves'
 import type { Game } from '@/mocks/types'
 
 /**
@@ -62,6 +63,37 @@ export function GameStage({
       if (sessionId) void endSession(game.id, sessionId)
     }
   }, [game.id, src])
+
+  // Cloud saves, around the same frame. The restore has to land before the
+  // game reads storage, so the iframe is held back until it has: a game that
+  // boots first and gets its progress second has already started a new one.
+  //
+  // Derived rather than set: a build with nothing to restore is ready during
+  // render, and only the fetched case moves state, from inside its own
+  // callback. Setting it synchronously in the effect body is a cascading
+  // render, which `react-hooks` rejects and which would flash an empty frame.
+  const [restored, setRestored] = useState<string | null>(null)
+  const local = Boolean(game.localBuildEntry)
+  const saveReady = !src || local || restored === game.id
+
+  useEffect(() => {
+    // A build mounted from a local zip is the dev previewing their own game.
+    // It has no purchase behind it and nothing to sync.
+    if (!src || local) return
+
+    let live = true
+    const holder: { session: SaveSession } = { session: {} }
+
+    void pullSave(game.id).then((session) => {
+      holder.session = session
+      if (live) setRestored(game.id)
+    })
+
+    return () => {
+      live = false
+      void pushSave(game.id, holder.session)
+    }
+  }, [game.id, src, local])
 
   useEffect(() => {
     function onChange() {
@@ -130,8 +162,10 @@ export function GameStage({
           )}
         >
           {children ??
-            (src ? (
+            (src && saveReady ? (
               <BuildFrame src={src} title={game.title} />
+            ) : src ? (
+              <div className="h-full bg-night" />
             ) : (
               <div className="relative h-full">
                 <Cover game={game} className="h-full" />

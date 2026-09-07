@@ -9,7 +9,9 @@ import { ButtonLink } from '@/components/ui/Button'
 import { Reveal } from '@/components/ui/Reveal'
 import { Sticker } from '@/components/ui/Sticker'
 import { compactCount, formatDate, truncateAddress } from '@/lib/format'
-import { getStudio, listGamesByStudio } from '@/api/games'
+import { getGame, getStudio, listGamesByStudio } from '@/api/games'
+import { TeamRoster } from '@/components/studio/TeamRoster'
+import type { WireStudioMember } from '@/api/wire'
 import { studioCredits } from '@/lib/credits'
 import { useSession } from '@/auth/session'
 import type { Game, Studio as StudioType } from '@/mocks/types'
@@ -28,6 +30,8 @@ export function Studio() {
     id: string
     studio: StudioType | undefined
     games: Game[]
+    members: WireStudioMember[]
+    ownerUserId: string | null
   } | null>(null)
 
   useEffect(() => {
@@ -35,20 +39,44 @@ export function Studio() {
     getStudio(id, controller.signal)
       .then(async (profile) => {
         if (!profile) {
-          setLoaded({ id, studio: undefined, games: [] })
+          setLoaded({ id, studio: undefined, games: [], members: [], ownerUserId: null })
           return
         }
         // The studio route answers by slug too, so the id in the URL may not
         // be the one games are filtered by. Use the resolved one.
-        const games = await listGamesByStudio(
+        const published = await listGamesByStudio(
           profile.studio.id,
           controller.signal,
         )
-        setLoaded({ id, studio: profile.studio, games })
+
+        // The catalog only returns published games, so unlisting one used to
+        // make it vanish from the page its own studio manages — leaving no way
+        // back to relist it short of a saved link. The studio route knows about
+        // every game, and only shows drafts to people entitled to see them, so
+        // anything it lists that the catalog dropped is fetched by id and
+        // shown with a badge.
+        const live = new Set(published.map((game) => game.id))
+        const hidden = profile.games.filter(
+          (game) => !live.has(game.id) && game.status !== 'removed',
+        )
+        const extra = (
+          await Promise.all(
+            hidden.map((game) => getGame(game.id, controller.signal).catch(() => undefined)),
+          )
+        ).filter((game) => game !== undefined)
+
+        const games = [...published, ...extra]
+        setLoaded({
+          id,
+          studio: profile.studio,
+          games,
+          members: profile.members,
+          ownerUserId: profile.ownerUserId,
+        })
       })
       .catch(() => {
         if (controller.signal.aborted) return
-        setLoaded({ id, studio: undefined, games: [] })
+        setLoaded({ id, studio: undefined, games: [], members: [], ownerUserId: null })
       })
     return () => controller.abort()
   }, [id])
@@ -58,7 +86,23 @@ export function Studio() {
   if (!ready) return <StudioLoading />
   if (!ready.studio) return <StudioNotFound />
 
-  const { studio, games } = ready
+  const { studio, games, members, ownerUserId } = ready
+
+  // Re-reads the studio after a roster change. Cheap, and it keeps one source
+  // of truth rather than patching a list in two places.
+  const reload = () =>
+    void getStudio(id).then((profile) => {
+      if (!profile) return
+      setLoaded((was) =>
+        was === null
+          ? was
+          : {
+              ...was,
+              members: profile.members,
+              ownerUserId: profile.ownerUserId,
+            },
+      )
+    })
   const isMine = session.studioId === studio.id
   const credits = studioCredits(games)
   const plays = games.reduce((sum, game) => sum + game.plays, 0)
@@ -66,8 +110,16 @@ export function Studio() {
   const rating = rated.length
     ? rated.reduce((sum, game) => sum + game.rating, 0) / rated.length
     : 0
-  const since = games.length
-    ? games[games.length - 1].publishedAt
+  // The oldest publish date, computed rather than read off the last card. That
+  // worked while the list was published games newest-first; unlisted ones are
+  // appended after them now, and a draft's date is a stand-in for one it does
+  // not have yet.
+  const published = games.filter((game) => game.status !== 'draft')
+  const since = published.length
+    ? published.reduce(
+        (oldest, game) => (game.publishedAt < oldest ? game.publishedAt : oldest),
+        published[0].publishedAt,
+      )
     : new Date().toISOString()
 
   return (
@@ -87,7 +139,7 @@ export function Studio() {
           <div className="flex flex-wrap items-start justify-between gap-x-10 gap-y-6">
             <div className="min-w-0">
               {isMine ? (
-                <Sticker className="mb-3 -rotate-2">Your studio</Sticker>
+                <Sticker className="mb-3 -rotate-2">My studio</Sticker>
               ) : null}
               <h1 className="text-[clamp(30px,4.6vw,48px)]">{studio.name}</h1>
 
@@ -203,6 +255,23 @@ export function Studio() {
                 Taken from the splits on everything they published.
               </p>
             </section>
+
+            {/* Credits above are permanent and come from the splits. This is
+                who is on the team today, which is a different question and the
+                only one that is editable. */}
+            {members.length > 0 ? (
+              <TeamRoster
+                studioId={studio.id}
+                members={members}
+                canManage={session.studios.some(
+                  (s) => s.id === studio.id && s.role === 'owner',
+                )}
+                isFounder={
+                  ownerUserId !== null && session.userId === ownerUserId
+                }
+                onChanged={reload}
+              />
+            ) : null}
 
             <ButtonLink to="/publish" variant={isMine ? 'primary' : 'neutral'}>
               {isMine ? 'Publish a game' : 'Publish your own'}

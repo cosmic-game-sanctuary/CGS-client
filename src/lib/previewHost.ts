@@ -103,13 +103,25 @@ export interface HostFile {
 type Command =
   | { op: 'put'; base: string; files: HostFile[] }
   | { op: 'drop'; id: string }
+  // Cloud saves. A build's progress lives in localStorage on the build origin,
+  // which the app deliberately cannot reach. The host can, because it is the
+  // one page that sits on both sides of that boundary.
+  | { op: 'snapshot' }
+  | { op: 'restore'; entries: Record<string, string> }
+
+/** Whatever the host sent back. Only the storage ops return anything. */
+export type HostResult = {
+  entries?: Record<string, string>
+  restored?: number
+  error?: string
+}
 
 export interface PreviewLink {
   /** Origin the build will actually be served from. */
   origin: string
   /** False when we had to fall back to the app's own origin. */
   isolated: boolean
-  send(command: Command, transfer?: Transferable[]): Promise<void>
+  send(command: Command, transfer?: Transferable[]): Promise<HostResult>
 }
 
 /** A host that never answers is a host that isn't there. */
@@ -141,7 +153,7 @@ function connect(origin: string): Promise<PreviewLink> {
 
     const pending = new Map<
       number,
-      { ok: () => void; fail: (error: Error) => void }
+      { ok: (result: HostResult) => void; fail: (error: Error) => void }
     >()
     let ticket = 0
     let settled = false
@@ -164,7 +176,7 @@ function connect(origin: string): Promise<PreviewLink> {
         origin,
         isolated: origin !== window.location.origin,
         send(command, transfer = []) {
-          return new Promise<void>((ok, fail) => {
+          return new Promise<HostResult>((ok, fail) => {
             ticket += 1
             pending.set(ticket, { ok, fail })
             frame.contentWindow?.postMessage(
@@ -198,7 +210,7 @@ function connect(origin: string): Promise<PreviewLink> {
           const entry = pending.get(Number(data.ticket))
           if (!entry) return
           pending.delete(Number(data.ticket))
-          if (data.kind === 'done') entry.ok()
+          if (data.kind === 'done') entry.ok((data.result as HostResult) ?? {})
           else entry.fail(new BuildError(String(data.error ?? 'Host error.')))
         }
       }

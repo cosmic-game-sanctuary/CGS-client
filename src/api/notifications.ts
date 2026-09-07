@@ -12,7 +12,29 @@ import { request } from '@/lib/api'
  * float the server derived. Nothing here does arithmetic on either.
  */
 
-export type WireNotificationType = 'sale' | 'invite' | 'agent_fired' | 'published'
+/**
+ * Every type the server's `notification_type` enum can hold.
+ *
+ * Kept in step with `CGS-server/src/db/schema.ts`. It is deliberately a plain
+ * union and not exhaustive-checked anywhere: `adaptNotification` returns null
+ * for anything it doesn't recognise, so the next type added on the other side
+ * is a row we skip rather than a panel that breaks.
+ */
+export type WireNotificationType =
+  | 'sale'
+  | 'invite'
+  | 'agent_fired'
+  | 'published'
+  | 'payout_held'
+  | 'payout_settled'
+  | 'agent_underfunded'
+  | 'agent_cancelled'
+  | 'agent_failed'
+  | 'agent_target_gone'
+  | 'build_updated'
+  | 'price_drop'
+  | 'review_reply'
+  | 'report_resolved'
 
 export interface WireNotification {
   id: string

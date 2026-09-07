@@ -13,8 +13,6 @@ import {
   displayIdentity,
   formatDate,
   formatPrice,
-  timeAgo,
-  truncateAddress,
 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { CheckoutOverlay } from '@/components/checkout/CheckoutOverlay'
@@ -23,7 +21,11 @@ import { MediaGallery } from '@/components/listing/MediaGallery'
 import { PlayOverlay } from '@/components/play/LightsDown'
 import { ReportDialog } from '@/components/listing/ReportDialog'
 import { ReviewForm } from '@/components/listing/ReviewForm'
-import { getGameWithState, getReviews } from '@/api/games'
+import { ReviewList } from '@/components/listing/ReviewList'
+import { WishlistButton } from '@/components/listing/WishlistButton'
+import { DemandNote } from '@/components/listing/DemandNote'
+import { getGameWithState } from '@/api/games'
+import { getReviews } from '@/api/social'
 import { mediaFor } from '@/mocks/media'
 import { useSession } from '@/auth/session'
 import type { Game, Review } from '@/mocks/types'
@@ -42,17 +44,32 @@ export function GameListing() {
     game: Game | undefined
     /** Authoritative, from the server's Mirror Node check. */
     owned: boolean
+    wishlisted: boolean
+    wishlistCount: number
   } | null>(null)
   const [loadedReviews, setLoadedReviews] = useState<{
     gameId: string
     reviews: Review[]
+  } | null>(null)
+  // Overrides the fetched values once this tab has changed them, so the button
+  // reflects the press rather than the last load.
+  const [savedState, setSavedState] = useState<{
+    gameId: string
+    wishlisted: boolean
+    wishlistCount: number
   } | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
     getGameWithState(slug, controller.signal)
       .then((found) => {
-        setLoaded({ slug, game: found?.game, owned: found?.owned ?? false })
+        setLoaded({
+          slug,
+          game: found?.game,
+          owned: found?.owned ?? false,
+          wishlisted: found?.wishlisted ?? false,
+          wishlistCount: found?.wishlistCount ?? 0,
+        })
         if (!found) return
         return getReviews(found.game.id, controller.signal).then((reviews) =>
           setLoadedReviews({ gameId: found.game.id, reviews }),
@@ -63,7 +80,13 @@ export function GameListing() {
         // A failed load and a missing game land on the same screen: from here
         // the game is not available, and which of the two it was is not
         // something the reader can act on differently.
-        setLoaded({ slug, game: undefined, owned: false })
+        setLoaded({
+          slug,
+          game: undefined,
+          owned: false,
+          wishlisted: false,
+          wishlistCount: 0,
+        })
       })
     return () => controller.abort()
     // `signedIn` is here because `owned` only comes back with a token, so
@@ -85,6 +108,14 @@ export function GameListing() {
   // The server checks the chain; the session store is a local optimism that
   // exists so a fresh purchase shows as owned before the next fetch lands.
   const owned = current.owned || session.ownedGameIds.includes(game.id)
+
+  const saved = savedState?.gameId === game.id ? savedState : current
+
+  // A manager of this game's studio, which is what the server gates replying
+  // and editing on. `role: 'owner'` on a membership means manager, not founder.
+  const managesStudio = session.studios.some(
+    (studio) => studio.id === game.studio.id && studio.role === 'owner',
+  )
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -137,7 +168,33 @@ export function GameListing() {
                     onPosted={(review) => setPosted((all) => [review, ...all])}
                   />
                 ) : null}
-                <ReviewList reviews={reviews} />
+                <ReviewList
+                  reviews={reviews}
+                  canReply={managesStudio}
+                  onChange={(updated) =>
+                    setLoadedReviews((current) =>
+                      current === null
+                        ? current
+                        : {
+                            ...current,
+                            reviews: current.reviews.map((r) =>
+                              r.id === updated.id ? updated : r,
+                            ),
+                          },
+                    )
+                  }
+                  onDeleted={(id) => {
+                    setPosted((all) => all.filter((r) => r.id !== id))
+                    setLoadedReviews((current) =>
+                      current === null
+                        ? current
+                        : {
+                            ...current,
+                            reviews: current.reviews.filter((r) => r.id !== id),
+                          },
+                    )
+                  }}
+                />
               </div>
             </section>
           </div>
@@ -154,6 +211,16 @@ export function GameListing() {
                       ? 'Jam'
                       : 'Updated'}
                 </Sticker>
+              ) : null}
+              {managesStudio ? (
+                <ButtonLink
+                  to={`/game/${game.slug}/manage`}
+                  variant="neutral"
+                  size="sm"
+                  className="mb-3"
+                >
+                  Manage this game
+                </ButtonLink>
               ) : null}
               <h1 className="text-[clamp(32px,4.4vw,46px)]">{game.title}</h1>
               <p className="mt-2 font-body text-[17px] leading-snug text-ink-soft">
@@ -222,8 +289,22 @@ export function GameListing() {
                   <p className="mt-3 font-body text-[13px] leading-relaxed text-ink-soft">
                     Starts in this tab. No install. All sales final.
                   </p>
+                  {/* Under the buy button, not beside it. Saving is what you
+                      do instead of buying, so it reads as the second option
+                      rather than a competing one. */}
+                  <WishlistButton
+                    className="mt-3"
+                    gameId={game.id}
+                    saved={saved.wishlisted}
+                    count={saved.wishlistCount}
+                    onChange={(next) =>
+                      setSavedState({ gameId: game.id, ...next })
+                    }
+                  />
                 </>
               )}
+
+              <DemandNote gameId={game.id} />
 
               <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t-2 border-ink pt-3 font-mono text-[11px] text-ink-soft">
                 <span>{compactCount(game.plays)} plays</span>
@@ -331,77 +412,6 @@ function Rating({ rating, count }: { rating: number; count: number }) {
         {count} verified {count === 1 ? 'review' : 'reviews'}
       </span>
     </div>
-  )
-}
-
-function ReviewList({ reviews }: { reviews: Review[] | null }) {
-  if (reviews === null) {
-    return (
-      <div className="mt-5 flex flex-col gap-3">
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="hatch h-24 rounded-card border-2 border-ink"
-          />
-        ))}
-      </div>
-    )
-  }
-
-  if (reviews.length === 0) {
-    return (
-      <p className="mt-5 rounded-card border-2 border-dashed border-ink-faint px-5 py-6 font-body text-sm text-ink-soft">
-        No reviews yet. The first one has to come from someone who owns it.
-      </p>
-    )
-  }
-
-  return (
-    <ul className="mt-5 flex list-none flex-col gap-3 p-0">
-      {reviews.map((review) => (
-        <li
-          key={review.id}
-          className="rounded-card border-2 border-ink bg-paper p-4"
-        >
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span
-              className="font-mono text-[13px] font-semibold"
-              title={review.authorIsEns ? undefined : review.author}
-            >
-              {review.authorIsEns
-                ? review.author
-                : truncateAddress(review.author)}
-            </span>
-            <span className="label-micro rounded-chip border-2 border-ink bg-green px-2 py-0.5 text-paper">
-              Verified purchase
-            </span>
-            <span className="ml-auto font-mono text-[11px] text-ink-soft">
-              {timeAgo(review.createdAt)}
-            </span>
-          </div>
-          <div
-            className="mt-2 flex gap-0.5"
-            aria-label={`${review.rating} out of 5`}
-          >
-            {[1, 2, 3, 4, 5].map((n) => (
-              <Star
-                key={n}
-                size={13}
-                strokeWidth={2.5}
-                className={cn(
-                  n <= review.rating
-                    ? 'fill-yellow text-ink'
-                    : 'text-ink-faint',
-                )}
-              />
-            ))}
-          </div>
-          <p className="mt-2.5 max-w-[62ch] font-body text-[15px] leading-relaxed">
-            {review.body}
-          </p>
-        </li>
-      ))}
-    </ul>
   )
 }
 

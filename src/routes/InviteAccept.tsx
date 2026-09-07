@@ -108,10 +108,10 @@ export function InviteAccept() {
               variant="neutral"
               size="lg"
             >
-              Your studio
+              My studio
             </ButtonLink>
             <ButtonLink to="/library" variant="ghost" size="lg">
-              <span className="text-paper">Your games</span>
+              <span className="text-paper">My games</span>
             </ButtonLink>
           </div>
         </div>
