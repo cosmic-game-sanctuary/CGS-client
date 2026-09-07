@@ -216,11 +216,15 @@ export function ProfileMenu() {
  * straight to one, so a person with their own testnet funds never needs the
  * faucet.
  *
- * The order genuinely matters and is the reason the hint is here rather than
- * in a doc nobody reads: the Hedera account behind this address does not exist
- * until value first lands on it, and HBAR is what creates it. A token sent
- * first has nowhere to go. Once the account exists its id appears below, which
- * doubles as confirmation that the first transfer worked.
+ * No HBAR step, and that is worth stating because the obvious assumption is
+ * wrong. The Hedera account behind this address does not exist until value
+ * first lands on it, but under HIP-542 a token transfer creates it too: the
+ * creation fee is charged to whoever sends, not deducted from what is sent.
+ * Verified against testnet with a token-only transfer to an untouched address.
+ * So USDC alone is enough, and nobody has to acquire HBAR to get started.
+ *
+ * The account id appears below once it exists, which doubles as confirmation
+ * that the first transfer worked.
  */
 function DepositAddress({
   address,
@@ -273,7 +277,7 @@ function DepositAddress({
         </button>
       </div>
       <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-ink-soft">
-        Send HBAR first. That is what opens the account. Then send USDC.
+        Send USDC here. The first thing that arrives opens the account.
       </p>
       <p className="mt-1 font-mono text-[10px] text-ink-faint">
         {accountId ? `Account ${accountId}` : 'No account yet'}
