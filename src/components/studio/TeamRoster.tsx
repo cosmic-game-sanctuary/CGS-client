@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
+import { InviteLink } from '@/components/studio/InviteLink'
 import {
   leaveStudio,
   removeMember,
@@ -89,20 +90,23 @@ export function TeamRoster({
               {canManage ? (
                 <span className="mt-2.5 flex flex-wrap items-center gap-x-1 gap-y-1.5 border-t-2 border-paper-deep pt-2.5">
                   {pending ? (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={working}
-                      onClick={() =>
-                        void run(
-                          member.id,
-                          () => resendInvite(studioId, member.id),
-                          `Invite sent again to ${member.handle}.`,
-                        )
-                      }
-                    >
-                      Resend invite
-                    </Button>
+                    <>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={working}
+                        onClick={() =>
+                          void run(
+                            member.id,
+                            () => resendInvite(studioId, member.id),
+                            `Invite sent again to ${member.handle}.`,
+                          )
+                        }
+                      >
+                        Resend invite
+                      </Button>
+                      <InviteLink memberId={member.id} />
+                    </>
                   ) : (
                     <Button
                       size="sm"
@@ -151,6 +155,7 @@ export function TeamRoster({
                   ) : null}
                 </span>
               ) : null}
+
             </li>
           )
         })}

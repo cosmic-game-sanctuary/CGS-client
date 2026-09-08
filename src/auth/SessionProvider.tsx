@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { getEmbeddedConnectedWallet, usePrivy, useWallets } from '@privy-io/react-auth'
-import { errorMessage, setTokenSource } from '@/lib/api'
+import { ApiError, errorMessage, setTokenSource } from '@/lib/api'
 import { getMe, type WireMe } from '@/api/me'
 import { SessionContext, sessionBridge, type SessionState } from '@/auth/session'
 
@@ -12,6 +12,14 @@ import { SessionContext, sessionBridge, type SessionState } from '@/auth/session
  * state in an effect and impossible to get wrong when someone signs into a
  * second account without reloading.
  */
+/**
+ * How long to keep waiting for Privy's API to report a wallet it has already
+ * created. Generous on purpose: the cost of waiting too long is a spinner, and
+ * the cost of giving up too early is telling somebody to sign out and back in
+ * on their first visit.
+ */
+const WALLET_WAIT_MS = 45_000
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const { ready, authenticated, user, login, logout, getAccessToken } = usePrivy()
   // Privy knows the embedded wallet's address without asking our server. That
@@ -31,6 +39,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     userId: string
     me: WireMe | null
     error: string | null
+    /** The wallet is still being created. A state to wait out, not an error. */
+    pending?: boolean
   } | null>(null)
   // Ownership the server has not caught up with yet. A GameKey mints a few
   // seconds after payment settles and the buyer is entitled to the game the
@@ -62,23 +72,39 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     // account without one. The server reads that and correctly says there is
     // no wallet; the client then cached the answer forever, so a first-ever
     // login could land on a permanently broken session that a reload fixed.
-    // Four attempts over roughly four seconds covers it.
+    //
+    // `WALLET_MISSING` gets its own, much longer budget. Four attempts over
+    // four seconds was a guess at how long Privy takes, and when it guessed
+    // short the app told the person to sign out and sign in again — asking
+    // them to work around our race, on the first screen they ever see. It is
+    // a state, not an error: the wallet is being created and waiting is the
+    // whole fix. Every other failure keeps the short budget, because those do
+    // not resolve themselves.
     async function load() {
-      for (let attempt = 1; attempt <= 4 && !cancelled; attempt += 1) {
+      const startedAt = Date.now()
+      for (let attempt = 1; !cancelled; attempt += 1) {
         try {
           const me = await getMe(controller.signal)
           if (!cancelled) setLoaded({ userId: id, me, error: null })
           return
         } catch (error: unknown) {
           if (cancelled || controller.signal.aborted) return
-          if (attempt === 4) {
+          const pending =
+            error instanceof ApiError && error.code === 'WALLET_MISSING'
+          const spent = Date.now() - startedAt
+          if (pending ? spent > WALLET_WAIT_MS : attempt >= 4) {
             // Signed into Privy but the server won't say who that is. Recorded
             // rather than swallowed, because every field below then sits at its
             // empty value and a broken account reads exactly like a new one.
             setLoaded({ userId: id, me: null, error: errorMessage(error) })
             return
           }
-          await new Promise((resolve) => setTimeout(resolve, attempt * 700))
+          // Say what is happening while it happens, so the header shows "one
+          // moment" rather than a balance of zero that looks like the truth.
+          if (pending) setLoaded({ userId: id, me: null, error: null, pending: true })
+          await new Promise((resolve) =>
+            setTimeout(resolve, pending ? 2000 : attempt * 700),
+          )
         }
       }
     }
@@ -149,6 +175,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       handle: me?.studio?.handle ?? null,
       studios: me?.studios ?? [],
       error: current?.error ?? null,
+      walletPending: current?.pending ?? false,
     }),
     [ready, authenticated, me, current, user, userId, justBought, privyAddress],
   )

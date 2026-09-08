@@ -75,6 +75,15 @@ export interface SessionState {
    * identical on screen while meaning completely different things.
    */
   error: string | null
+  /**
+   * Privy is still creating this account's embedded wallet.
+   *
+   * Distinct from `error`, because it resolves itself and nothing here is
+   * broken. Every authenticated write will fail until it clears, so a screen
+   * with a button that writes should say "one moment" rather than let someone
+   * press it and be told to sign out and sign in again.
+   */
+  walletPending: boolean
 }
 
 export const EMPTY_SESSION: SessionState = {
@@ -98,6 +107,7 @@ export const EMPTY_SESSION: SessionState = {
   handle: null,
   studios: [],
   error: null,
+  walletPending: false,
 }
 
 export const SessionContext = createContext<SessionState>(EMPTY_SESSION)

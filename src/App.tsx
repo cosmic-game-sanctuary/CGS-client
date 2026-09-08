@@ -4,6 +4,7 @@ import { Catalog } from '@/routes/Catalog'
 import { GameListing } from '@/routes/GameListing'
 import { InviteAccept } from '@/routes/InviteAccept'
 import { Library } from '@/routes/Library'
+import { Money } from '@/routes/Money'
 import { Profile } from '@/routes/Profile'
 import { ManageGame } from '@/routes/ManageGame'
 import { NotFound } from '@/routes/NotFound'
@@ -25,6 +26,10 @@ export default function App() {
         <Route path="/studio/new" element={<StudioSetup />} />
         <Route path="/studio/:id" element={<Studio />} />
         <Route path="/library" element={<Library />} />
+        {/* What you earned, and the way out of the wallet. Its own page rather
+            than a panel in the profile menu: a form that can send a whole
+            balance to a typed address needs more room than a dropdown. */}
+        <Route path="/money" element={<Money />} />
         <Route path="/u/:handle" element={<Profile />} />
         {/* Where an emailed invite lands. Reachable signed out, like everything
             else; signing in is only asked for at the point of claiming. */}

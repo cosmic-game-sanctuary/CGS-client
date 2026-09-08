@@ -12,6 +12,30 @@ export function formatPrice(usd: number): string {
   return `$${usd.toFixed(2)}`
 }
 
+/**
+ * `12.5` → `"$12.50"`, and `0` → `"$0.00"`.
+ *
+ * For ledger totals, where zero is a real figure and `formatPrice`'s "Free"
+ * would be nonsense. A price of nothing is a gift; earnings of nothing is a
+ * number.
+ */
+export function formatAmount(usd: number): string {
+  return `$${usd.toFixed(2)}`
+}
+
+/**
+ * An amount with the unit it is actually denominated in.
+ *
+ * Only the withdraw path needs this: everywhere else in the app money is the
+ * settlement asset and reads as dollars. HBAR turns up there because it is what
+ * opened the account, and printing eight tinybar decimals as dollars would be a
+ * lie about both.
+ */
+export function formatAsset(value: number, asset: string): string {
+  if (asset === '0.0.0') return `${Number(value.toFixed(4))} HBAR`
+  return formatAmount(value)
+}
+
 /** `0x71C7…3e4F`. Never let a raw address wrap. DESIGN.md §9. */
 export function truncateAddress(address: string, lead = 6, tail = 4): string {
   if (address.length <= lead + tail + 1) return address

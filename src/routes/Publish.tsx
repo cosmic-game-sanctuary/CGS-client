@@ -25,6 +25,7 @@ import {
 import { cn } from '@/lib/utils'
 import { errorMessage } from '@/lib/api'
 import { getStudio } from '@/api/games'
+import { InviteLink } from '@/components/studio/InviteLink'
 import { publishDraft, uploadGame, type SplitInput } from '@/api/publish'
 import { useSession } from '@/auth/session'
 import { StudioSetup } from '@/routes/StudioSetup'
@@ -94,17 +95,25 @@ export function Publish() {
   // email and no address. Comes from the roster rather than from past splits:
   // a member who joined but hasn't shipped yet is still someone you can credit.
   const [team, setTeam] = useState<Array<{ id: string; handle: string }>>([])
+  // Your own membership row in your own studio. Needed for the same reason the
+  // roster is: a split has to name a person the server can link back to you.
+  // See toSplitInput.
+  const [myMemberId, setMyMemberId] = useState<string | null>(null)
   useEffect(() => {
     if (!myStudio) return
     const controller = new AbortController()
     getStudio(myStudio.id, controller.signal)
-      .then((profile) =>
+      .then((profile) => {
+        const roster = profile?.members ?? []
         setTeam(
-          (profile?.members ?? [])
+          roster
             .filter((member) => member.handle !== myHandle)
             .map((member) => ({ id: member.id, handle: member.handle })),
-        ),
-      )
+        )
+        setMyMemberId(
+          roster.find((member) => member.handle === myHandle)?.id ?? null,
+        )
+      })
       .catch(() => {})
     return () => controller.abort()
   }, [myStudio, myHandle])
@@ -124,7 +133,9 @@ export function Publish() {
     title: string
     splitCount: number
   } | null>(null)
-  const [sent, setSent] = useState<Array<{ id: string; email: string }>>([])
+  const [sent, setSent] = useState<
+    Array<{ id: string; email: string; handle: string }>
+  >([])
 
   // Steps change state, not the route, so ScrollManager never sees them —
   // without this you land halfway down the next step.
@@ -194,9 +205,21 @@ export function Publish() {
   }
 
   /**
-   * How the editor's three kinds of person become something the server can
-   * pay. Only the first has an address; the other two name a person and let
-   * the server work out where their money goes, now or when they claim it.
+   * How the editor's three kinds of person become something the server can pay.
+   *
+   * All three name a person rather than an address, and that is the point.
+   * A split carries three ways to identify someone: a wallet, a membership row,
+   * and a user id. The server fills in whichever it can work out, and **a split
+   * sent as a bare `wallet` gets only the wallet** — no membership, no user.
+   *
+   * That is invisible until you ask what somebody earned. The earnings report
+   * finds your shares by membership or by user id, so a share credited to your
+   * own address and nothing else belongs to nobody: `/money` reported zero for
+   * the one person guaranteed to have earned something, the studio owner.
+   *
+   * So yourself is sent as your membership row, exactly like a teammate. The
+   * address fallback is for a studio old enough to predate its owner having a
+   * membership row at all.
    */
   function toSplitInput(member: DraftMember): SplitInput {
     const base = { role: member.role, pct: member.pct }
@@ -209,6 +232,9 @@ export function Publish() {
     }
     if (member.kind === 'teammate' && member.memberId) {
       return { ...base, studioMemberId: member.memberId, handle: member.label }
+    }
+    if (myMemberId) {
+      return { ...base, studioMemberId: myMemberId, handle: member.label }
     }
     return { ...base, wallet: session.address ?? undefined, handle: member.label }
   }
@@ -248,7 +274,7 @@ export function Publish() {
       // public listing.
       const game = await publishDraft(current.id)
 
-      setSent(current.invited.map((i) => ({ id: i.id, email: i.email })))
+      setSent(current.invited)
       setPublished({
         id: game.id,
         slug: game.slug,
@@ -782,7 +808,7 @@ function Published({
 }: {
   game: { title: string; splitCount: number }
   studioId: string
-  invites: Array<{ id: string; email: string }>
+  invites: Array<{ id: string; email: string; handle: string }>
   onGo: () => void
 }) {
   return (
@@ -806,25 +832,40 @@ function Published({
             My studio
           </ButtonLink>
         </div>
+        {/* Not a demo panel, though it started as one. Publishing emails these
+            people, and mail is the one channel that reaches somebody with no
+            account, but it is also the one we can least rely on: an unverified
+            sending domain only delivers to our own address, and an invite that
+            bounces is a share nobody can claim. Handing the links over here is
+            what makes the feature work in a chat window. Same reason the roster
+            can copy one. */}
         {invites.length > 0 ? (
-          <div className="w-full max-w-140 rounded-card border-2 border-dashed border-ink-faint p-4">
+          <div className="w-full max-w-140 rounded-card border-2 border-ink bg-paper-sunk p-4">
             <p className="label-micro text-ink-soft">
-              Invites sent · demo controls, not shipping
+              {invites.length === 1
+                ? 'One person was invited'
+                : `${invites.length} people were invited`}
             </p>
             <p className="mt-2 font-body text-[13px] leading-relaxed text-ink-soft">
-              These go out by email. There is no mail server here, so open one
-              to see what they receive.
+              Their share is live from the first sale either way. These links are
+              how they claim the wallet it pays into, and they have been emailed
+              too. Send one on if the mail does not arrive.
             </p>
-            {/* TODO(demo): delete. Real invites arrive in the invitee's inbox. */}
-            <ul className="mt-3 flex list-none flex-col gap-1.5 p-0">
+            <ul className="mt-3 flex list-none flex-col gap-2 p-0">
               {invites.map((invite) => (
-                <li key={invite.id}>
-                  <Link
-                    to={`/invite/${invite.id}`}
-                    className="font-mono text-[12px] text-ink underline underline-offset-2"
-                  >
-                    {invite.email}
-                  </Link>
+                <li
+                  key={invite.id}
+                  className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-card border-2 border-ink bg-paper px-3 py-2"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate font-mono text-[13px] font-semibold">
+                      {invite.handle}
+                    </span>
+                    <span className="block truncate font-mono text-[11px] text-ink-soft">
+                      {invite.email}
+                    </span>
+                  </span>
+                  <InviteLink memberId={invite.id} />
                 </li>
               ))}
             </ul>

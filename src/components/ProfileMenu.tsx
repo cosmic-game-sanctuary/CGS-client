@@ -18,10 +18,16 @@ import { fund, signIn, signOut, useSession } from '@/auth/session'
  * - **My studio** (`/studio/:id`) — what you made, and who made it with you.
  *   Team and credits live there because they're public facts about the studio,
  *   not private settings.
+ * - **My money** (`/money`) — what you earned, and how to take it out. The
+ *   third page, and the only one added since this list was written. It is
+ *   cross-studio, so a studio page cannot hold it, and it is not about games
+ *   you hold, so the library cannot either.
  * - **Publish** (`/publish`) — an action, not a place. A menu item, not a tab.
  * - **Wallet** — balance, top-up, and the address to send to, inline here.
  *   There is nothing else to configure, so a settings page would be an empty
- *   room.
+ *   room. Taking money *out* is on `/money` instead: the balance is a fact and
+ *   belongs in a menu, but a destination address and an amount are a decision
+ *   and need somewhere to stand.
  *
  * The deposit address is the only funding route that always works. The faucet
  * button beside it moves funds out of the operator account and only exists
@@ -173,6 +179,13 @@ export function ProfileMenu() {
               <p className="mt-2 font-mono text-[10px] leading-relaxed text-red">
                 {session.error}
               </p>
+            ) : session.walletPending ? (
+              // Not an error, and never phrased as one. Privy is creating the
+              // wallet right now and the app is waiting for it, which is the
+              // whole of what anyone needs to know.
+              <p className="mt-2 font-mono text-[10px] leading-relaxed text-ink-soft">
+                Setting up your wallet. This takes a few seconds.
+              </p>
             ) : null}
 
             {session.address ? (
@@ -196,6 +209,7 @@ export function ProfileMenu() {
                 onGo={() => setOpen(false)}
               />
             ) : null}
+            <Item to="/money" label="My money" onGo={() => setOpen(false)} />
             <Item
               to={session.studioId ? `/studio/${session.studioId}` : '/studio/new'}
               label={session.studioId ? 'My studio' : 'Set up a studio'}

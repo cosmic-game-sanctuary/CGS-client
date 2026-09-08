@@ -57,12 +57,13 @@ Smaller pieces:
 |---|---|---|
 | Write-a-review flow | ✅ done | Ownership-gated, appears on the listing only if you hold the key. |
 | Your library | ✅ done | `/library`. Owned keys as ticket stubs, plus the triggers you're waiting on. |
+| Your money | ✅ done | `/money`. What you earned across every team, what is still owed, and a withdrawal that signs in this tab. |
 | "Why we built this" modal | ✅ done | Catalog hero. Where the censorship story lives, deliberately off the shopfront. |
 | Report flow | ✅ done | Modal with reasons, confirmation state. |
 | Real build in the player | ✅ done | Client-side unzip plus a service worker; see §3. |
 | 404 | ✅ done | A real page, not a redirect. Bouncing to `/` hid broken links. |
 | Studio creation | ✅ done | `/studio/new`, and `/publish` shows it as step 0 when you have none. |
-| Teammate invite | ✅ done | `/invite/:id`. The other end of the splits editor. Reachable signed out. |
+| Teammate invite | ✅ done | `/invite/:id`. The other end of the splits editor. Reachable signed out. Accepting is what releases the payouts held for someone who hadn't claimed. |
 | Notifications | ✅ done | A panel in the header, not a page. Sales, invites, agent buys, publishes. |
 
 **Priority if time runs short:** checkout→instant play, then drag-zip→preview, then a catalog that doesn't look empty, then the agent screen. Cut breadth, keep those four sharp.
@@ -93,15 +94,18 @@ The banlist in [DESIGN.md §9](DESIGN.md) is the part most likely to be violated
 
 ### Information architecture
 
-Everything about you lives behind the profile control in the top right. Two pages, one action, and the wallet inline. Keep it that way:
+Everything about you lives behind the profile control in the top right. Three pages, one action, and the wallet inline. Keep it that way:
 
 | Where | What | Why there |
 |---|---|---|
-| `/library` — **Your games** | Keys you hold, plus triggers you've set | A trigger is a game you're trying to get, so it sits beside the ones you got. **This is why there is no agents page.** |
-| `/studio/:id` — **Your studio** | Games you made, your team, ENS name | Team and credits are public facts about the studio, not private settings. |
+| `/library` — **My games** | Keys you hold, plus triggers you've set | A trigger is a game you're trying to get, so it sits beside the ones you got. **This is why there is no agents page.** |
+| `/money` — **My money** | What you earned, what is still owed, and the way out of the wallet | Cross-studio, so no studio page can hold it, and not about games you hold, so the library can't either. The third page, and the only one added since this list was written. |
+| `/studio/:id` — **My studio** | Games you made, your team, ENS name, and what the team took in | Team and credits are public facts about the studio, not private settings. Earnings are the same fact, shown to the team only. |
 | `/publish` — **Publish a game** | The upload flow | An action, not a place. A menu item, never a tab. |
 | The menu itself | Email, balance, add funds, sign out | There is nothing else to configure, so a settings page would be an empty room. |
 | The bell, beside it | Sales, invites, what your agents did | **A panel, not a page.** Every row points at something that already has a home, so a `/notifications` route would be a room you pass through on the way somewhere else. |
+
+Money **in** is inline in the menu; money **out** is on `/money`. A balance is a fact and belongs beside your name. A destination address, an amount and a memo are a decision, and a 264px dropdown is the wrong place to make one that can empty an account.
 
 Price triggers are set **on the game listing**, under the buy box, not on a page of their own. Buying and setting a trigger are the same decision made two ways.
 
@@ -182,25 +186,37 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Integrated against the live API, six workflows deep. Real money, real GameKeys, real builds.
+**Stage:** Integrated against the live API. Money, GameKeys, builds, invites, payouts and withdrawals are all real. Three backend surfaces have no screen yet: sales, paid trials, and the rebuilt agent.
+
+> **The database is shared and a migration is a deploy.** Both sides point at one Neon database, so branching code does not branch the schema. Stage 18 dropped `wishlist_agents.target_game_id`, which broke the *other* checkout with no code change on that side. If the server throws `column … does not exist`, pull before debugging.
 **Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@privy-io/react-auth`, `@iconify-json/streamline-freehand` (dev)
-**Screens built:** catalog (`/`), listing (`/game/:slug`), checkout overlay, player (`/play/:slug`), publish (`/publish`), studio (`/studio/:id` and `/studio/new`), library (`/library`), invite (`/invite/:id`), 404
-**Deployed:** no. Needs `VITE_PREVIEW_ORIGIN` (§3) and a server with a persistent disk, since builds are now served from one.
+**Screens built:** catalog (`/`), listing (`/game/:slug`), manage (`/game/:slug/manage`), checkout overlay, player (`/play/:slug`), publish (`/publish`), studio (`/studio/:id` and `/studio/new`), library (`/library`), money (`/money`), profile (`/u/:handle`), invite (`/invite/:id`), 404
+**Deployed:** no. Needs `VITE_PREVIEW_ORIGIN` (§3).
 
 **Working end to end, against the real backend:**
 - **Buy:** browse → listing → buy → Privy sign-in → add funds → **pay, signed by your own wallet in this tab** → x402 settles on Hedera → the GameKey mints → the game boots in the same tab. Verified on testnet: $3.00 left the buyer, $1.71 came back as their split share, the key minted with serial 1.
 - **Publish:** make a studio (real ENS subname on Sepolia) → drop a zip → see it running → details, cover, price → splits, including someone who has only an email → publish. The build is pinned to IPFS and a real HTS token is created.
 - **Play:** the build is fetched from the API, unpacked in the browser and run on the isolated build origin. Same pipeline as the publish preview.
+- **Say something:** verified-purchase reviews, a studio reply on any of them, deleting your own, and reporting either.
+- **Get invited:** an emailed link lands on `/invite/:id`, accepting backfills every split naming that person, and the money held while they hadn't claimed goes out.
+- **Get paid, and take it out:** earnings across every team on `/money`, the studio's own on its page, and a withdrawal to any address, signed in the tab.
 
-**Still on mocks:** reviews, reports, `/invite/:id`, the agent.
+**Still on mocks:** the agent, and nothing else. `src/mocks/games.ts` survives for `mediaFor` and `mocks/types.ts`, which is the view model every component is written against.
 
 `npm run lint` and `npm run build` are both clean.
 
-**Next up:**
-1. `/invite/:id`, which is also what settles the payouts held for someone who hasn't accepted.
-2. Reviews, likes and reports.
-3. The agent.
-4. Then Impeccable per screen, and swipe discovery if there is time.
+**Next up.** The backend ran ahead by four stages (16 to 20) while we did W7 and W11. Three whole surfaces are live server-side with no screen at all, and none of the three depend on each other. `../CGS-docs/INTEGRATION.md` §17 to §20 is the contract; §20 is Priyanshu's own suggestion for each, worth reading before disagreeing with it.
+
+0. **Contract catch-up first, same as before W6.5.** Small, and two items are already silently wrong on screen:
+   - `POST /api/agents` and `GET /api/agents/:id` are **gone, 404**. `src/mocks/agent.ts` and `AgentPanel` on the listing now point at nothing.
+   - Three new notification types (`agent_purchased`, `agent_expired`, `agent_asked`) have no copy, so `adaptNotification` drops them. Safe, but invisible.
+   - `WireGame` needs `promotion`; the wishlist row needs `agentMaxUnits`, `agentNote`, `agent`.
+1. **W12 sales.** Purely additive, no new screen. A running sale on the card and the listing with a countdown to `endsAt`, and a sale form on manage. `PATCH /api/games/:id` answers `409 PROMOTION_ACTIVE` while one runs, so the price field has to send you to the sale rather than fail.
+2. **W13 paid trials.** A second button beside Buy, and a HUD over the running game. The chunk purchase is `/pay/prepare` and `/pay/complete` pointed at a different pair of URLs, so `buyGame` is nearly the whole thing already. Buying the game afterwards needs no new call: `GET /download` subtracts the credit itself.
+3. **W9 the agent, rebuilt as 1:N.** One agent per person, one budget, many wants. Its own page, wants set from the game listing, a decisions feed, and the ask-first answer. The largest piece and the headline claim.
+4. Then likes and comments, which have API modules and no UI, then Impeccable per screen and swipe discovery if there is time.
+
+**Untested:** cloud saves (no build we have writes to storage) and the failed-payout path (nothing has failed yet).
 
 ### Layout of the repo
 
@@ -209,22 +225,29 @@ scripts/build-icons.mjs   extracts only the Freehand icons we use → src/compon
 public/preview-host.html  runs on the build origin. Registers the worker and
 public/preview-sw.js      writes/serves unpacked builds. See §3.
 src/styles/tokens.css     the whole design system. DESIGN.md §12 lives here.
-src/mocks/                types.ts mirrors the API contract; games.ts is the fake
-                          backend; session.ts is the Privy stand-in (a tiny
-                          useSyncExternalStore store — sign-in, balance, keys);
-                          agent.ts, invites.ts and notifications.ts are the same
-                          shape
+src/api/                  one module per area over lib/api.ts. wire.ts is what
+                          the server sends, adapt.ts is the only file that knows
+                          both that and mocks/types.ts
+src/auth/                 SessionProvider + session.ts (who you are, what your
+                          wallet holds), useWalletSigner.ts (the one step the
+                          server cannot take)
+src/mocks/                types.ts is the view model every component is written
+                          against, and the reason this folder still exists.
+                          games.ts survives for mediaFor; agent.ts is the last
+                          real mock
 src/lib/                  cn(), format.ts for every ledger value, buildPreview.ts
                           + previewHost.ts for running a real zip
 src/components/           CoverArt, GameCard, SplitBar, HeroCollage, GameStage,
                           Logo, ScrollManager, SiteHeader/Footer, ProfileMenu,
                           NotificationBell, checkout/, publish/, play/, listing/,
-                          icons/, ui/
-src/routes/               Catalog, GameListing, Player, Publish, Studio,
-                          StudioSetup, Library, InviteAccept, NotFound
+                          manage/, money/, studio/, profile/, library/, icons/,
+                          ui/
+src/routes/               Catalog, GameListing, ManageGame, Player, Publish,
+                          Studio, StudioSetup, Library, Money, Profile,
+                          InviteAccept, NotFound
 ```
 
-Integration seams are marked `TODO(integration)` — grep for it. They are: Privy login, Privy funding, the x402 payment call, `POST /api/agents`, reviews, reports, and the agent's demo controls.
+Integration seams are marked `TODO(integration)` — grep for it. The live ones are the agent (`POST /api/agents`, `mocks/agent.ts`, `AgentPanel`) and Privy's own funding UI, which replaces the dev faucet before any deploy. **The rest are stale**, left in `src/mocks/` and the publish flow by code that was integrated around them; `src/mocks/notifications.ts` is dead and imported by nothing.
 
 ### Running a real game build in the page
 
@@ -276,10 +299,30 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 | Where a build comes from | The API, unpacked in the browser onto the build origin | No IPFS gateway will serve one (Pinata refuses HTML on shared subdomains; public gateways can't find fresh CIDs). The CID still proves what a build is. |
 | Boot sequences | Beats carry the work; their timings are floors, not durations | A sequence that runs to a script finishes before the payment does, and the shutter comes up on a game nobody bought. |
 | Optimistic ownership | Local flag at settlement, replaced by the server's answer | The buyer is entitled the moment payment settles, and the GameKey lands seconds later. Never the source of truth: a reload asks the server. |
+| Where money out lives | `/money`, a third page behind the profile menu | Earnings are cross-studio, so no studio page can hold them, and they are not games you own, so the library can't. Withdrawal goes beside the number it acts on, not in a 264px dropdown. |
+| Withdrawal retry | None, unlike a purchase | An expired intent and a network refusal come back as the same error on the same field. One of them may have moved money, so retrying is the person's call. |
+| Held payouts | Stated, never claimable | They settle by themselves when the wallet first has a Hedera account. A claim button would be a button that does nothing. |
+| The invite link | Copyable from the roster | Email is the only channel that reaches somebody with no account, and an unverified domain can only mail our own address. An invite that bounces is a share nobody can claim. |
 
 ### Log
 
 _Newest first._
+
+#### 2026-09-08 (W7 invites, W11 money) — Suparno
+
+Two workflows in one pass, because they are the same story from both ends: a share is credited to someone with no wallet, the money is held, and both sides need to see it.
+
+- **`/invite/:id` is real.** `src/mocks/invites.ts` is deleted. The screen lost three things it used to have, and all three are absences in the API rather than gaps: **no decline** (not accepting *is* the decline, and it stays reversible), **no editing your handle** (it is already on published splits, which are immutable), and **no naming a specific game** (an invite is to a studio, and one person can be credited across several of its games at different percentages).
+- **The accept screen reads the earnings report twice**, eight seconds apart. Accepting responds before the transfers go out, so a single read shows the money still held and reports the opposite of what just happened.
+- **A bug worth naming, because the shape recurs.** The success branch keyed off the *fetched* invite, which is from before the accept and never re-read. Pressing accept left you on the accept screen. Both the "you're in" and the "somebody else claimed this" branches now read the local claim as well.
+- **New page: `/money`.** The third behind the profile menu, and the first added since that list was written. It holds what the other two structurally cannot: earnings are cross-studio, so a studio page cannot show them, and they are not games you hold, so the library cannot either.
+- **Earned and In your wallet are two numbers, side by side, on purpose.** Earned is your share of every sale ever. In your wallet is that minus what you spent, minus what you took out, minus what is still held. Showing one and labelling it the other is the mistake the layout exists to prevent.
+- **Withdrawal has no auto-retry, unlike a purchase.** Buying retries on `PAYMENT_INTENT_EXPIRED` because nothing was charged. Here the expiry and a network refusal both arrive as `VALIDATION_FAILED` on `intentId`, so they cannot be told apart from outside, and one of them may have moved money.
+- **"Everything" omits `amountUnits` rather than computing it.** The server reads the live balance and sends exactly that, so the common case does no arithmetic on a float. A typed amount still converts with `Math.round(x * 10 ** decimals)`, same as the price field.
+- **Studio earnings sit in the main column, not the aside.** 260px is not a place to read a table of money. Team only, decided from `session.studios` rather than by fetching and catching a 403 on every stranger who opens the page.
+- **The invite link is copyable from the roster.** Resend only re-sends mail, and with no verified domain Resend delivers to our own address only. Without a link to paste into a chat window, an invite to anyone else is unreachable, which makes the whole feature untestable and, for a jam team, useless.
+- **`payout_settled` now points at `/money`, not `/library`.** The row carries no game, because one settlement can cover shares from several.
+- **Found, not fixed, ours to raise:** a brand new invitee cannot receive held money at all. Settling needs a `0.0.x` account, and a Privy wallet has none until value first lands on it, so the money waiting for them is exactly what cannot open the account. The screen says so plainly instead of pretending. See `../CGS-docs/PROGRESS-LOG.md`.
 
 #### 2026-09-06 (integration W1–W6) — Suparno
 

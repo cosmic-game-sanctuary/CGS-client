@@ -11,6 +11,7 @@ import { Sticker } from '@/components/ui/Sticker'
 import { compactCount, formatDate, truncateAddress } from '@/lib/format'
 import { getGame, getStudio, listGamesByStudio } from '@/api/games'
 import { TeamRoster } from '@/components/studio/TeamRoster'
+import { StudioEarnings } from '@/components/studio/StudioEarnings'
 import type { WireStudioMember } from '@/api/wire'
 import { studioCredits } from '@/lib/credits'
 import { useSession } from '@/auth/session'
@@ -39,7 +40,13 @@ export function Studio() {
     getStudio(id, controller.signal)
       .then(async (profile) => {
         if (!profile) {
-          setLoaded({ id, studio: undefined, games: [], members: [], ownerUserId: null })
+          setLoaded({
+            id,
+            studio: undefined,
+            games: [],
+            members: [],
+            ownerUserId: null,
+          })
           return
         }
         // The studio route answers by slug too, so the id in the URL may not
@@ -61,7 +68,9 @@ export function Studio() {
         )
         const extra = (
           await Promise.all(
-            hidden.map((game) => getGame(game.id, controller.signal).catch(() => undefined)),
+            hidden.map((game) =>
+              getGame(game.id, controller.signal).catch(() => undefined),
+            ),
           )
         ).filter((game) => game !== undefined)
 
@@ -76,7 +85,13 @@ export function Studio() {
       })
       .catch(() => {
         if (controller.signal.aborted) return
-        setLoaded({ id, studio: undefined, games: [], members: [], ownerUserId: null })
+        setLoaded({
+          id,
+          studio: undefined,
+          games: [],
+          members: [],
+          ownerUserId: null,
+        })
       })
     return () => controller.abort()
   }, [id])
@@ -104,6 +119,10 @@ export function Studio() {
       )
     })
   const isMine = session.studioId === studio.id
+  // Founder or accepted member. The server refuses the earnings report to
+  // anyone else, so the question is answered from the session rather than by
+  // fetching and catching a 403 on every stranger who opens the page.
+  const onTeam = session.studios.some((s) => s.id === studio.id)
   const credits = studioCredits(games)
   const plays = games.reduce((sum, game) => sum + game.plays, 0)
   const rated = games.filter((game) => game.reviewCount > 0)
@@ -117,7 +136,8 @@ export function Studio() {
   const published = games.filter((game) => game.status !== 'draft')
   const since = published.length
     ? published.reduce(
-        (oldest, game) => (game.publishedAt < oldest ? game.publishedAt : oldest),
+        (oldest, game) =>
+          game.publishedAt < oldest ? game.publishedAt : oldest,
         published[0].publishedAt,
       )
     : new Date().toISOString()
@@ -181,44 +201,51 @@ export function Studio() {
 
       <main className="mx-auto w-full max-w-page flex-1 px-6 py-10">
         <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_260px]">
-          <section>
-            <h2 className="mb-5 text-2xl">
-              {isMine
-                ? games.length === 1
-                  ? 'Your game'
-                  : 'Your games'
-                : games.length === 1
-                  ? 'Their game'
-                  : 'Their games'}
-            </h2>
+          <div className="flex min-w-0 flex-col gap-12">
+            <section>
+              <h2 className="mb-5 text-2xl">
+                {isMine
+                  ? games.length === 1
+                    ? 'Your game'
+                    : 'Your games'
+                  : games.length === 1
+                    ? 'Their game'
+                    : 'Their games'}
+              </h2>
 
-            {games.length === 0 ? (
-              <div className="flex flex-col items-start gap-4 rounded-card border-2 border-ink bg-yellow px-7 py-9 shadow-hard md:flex-row md:items-center md:gap-8">
-                <Freehand
-                  name="video-game-controller"
-                  className="h-20 w-20 text-ink"
-                />
-                <div>
-                  <h3 className="text-2xl">Nothing published yet.</h3>
-                  <p className="mt-2 max-w-[42ch] font-body text-[15px] text-ink">
-                    {isMine
-                      ? 'Your name is claimed. Drop a build in and it’s on the shelf in four steps.'
-                      : 'This studio has claimed its name but hasn’t shipped anything.'}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <Reveal className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-5">
-                {games.map((game, i) => (
-                  <GameCard
-                    key={game.id}
-                    game={game}
-                    style={{ '--i': i } as CSSProperties}
+              {games.length === 0 ? (
+                <div className="flex flex-col items-start gap-4 rounded-card border-2 border-ink bg-yellow px-7 py-9 shadow-hard md:flex-row md:items-center md:gap-8">
+                  <Freehand
+                    name="video-game-controller"
+                    className="h-20 w-20 text-ink"
                   />
-                ))}
-              </Reveal>
-            )}
-          </section>
+                  <div>
+                    <h3 className="text-2xl">Nothing published yet.</h3>
+                    <p className="mt-2 max-w-[42ch] font-body text-[15px] text-ink">
+                      {isMine
+                        ? 'Your name is claimed. Drop a build in and it’s on the shelf in four steps.'
+                        : 'This studio has claimed its name but hasn’t shipped anything.'}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <Reveal className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-5">
+                  {games.map((game, i) => (
+                    <GameCard
+                      key={game.id}
+                      game={game}
+                      style={{ '--i': i } as CSSProperties}
+                    />
+                  ))}
+                </Reveal>
+              )}
+            </section>
+
+            {/* The takings, and who they were divided between. Only the team, and
+              deliberately in the main column rather than the aside: it is a
+              table of money, and 260px is not a place to read one. */}
+            {onTeam ? <StudioEarnings studioId={studio.id} /> : null}
+          </div>
 
           <aside className="flex flex-col gap-6">
             <section className="rounded-card border-2 border-ink bg-paper p-5 shadow-hard">

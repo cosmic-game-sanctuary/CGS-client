@@ -1,69 +1,79 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Freehand } from '@/components/icons/Freehand'
 import { SiteFooter } from '@/components/SiteFooter'
 import { SiteHeader } from '@/components/SiteHeader'
-import { SplitBar } from '@/components/SplitBar'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { Sticker } from '@/components/ui/Sticker'
-import { cn } from '@/lib/utils'
-import { getGame } from '@/mocks/games'
-import { acceptInvite, declineInvite, useInvite } from '@/mocks/invites'
+import { errorMessage } from '@/lib/api'
+import { formatAmount } from '@/lib/format'
+import { acceptInvite, getInvite, type WireInvite } from '@/api/invites'
+import { getMyEarnings, type WirePersonalEarnings } from '@/api/earnings'
 import { joinStudio, signIn, useSession } from '@/auth/session'
-import type { Game } from '@/mocks/types'
 
 /**
  * The other end of the splits editor.
  *
- * The one thing this screen has to make true: **the share exists whether or
- * not you accept.** It was locked when the game was published and every sale
- * has been dividing that way since. Accepting claims the wallet it lands in,
- * so this is a collection, not an application. Everything on the page is
- * arranged to say that before it asks for anything.
+ * The one thing this screen has to make true: **the share exists whether or not
+ * you accept.** It was locked when the game was published and every sale has
+ * been dividing that way since. Accepting names the wallet it lands in, so this
+ * is a collection, not an application. Everything on the page is arranged to
+ * say that before it asks for anything.
  *
- * Declining is reversible, because nothing is destroyed by it.
+ * Three things the real API does not offer, which the mocked version of this
+ * screen did, and which are absences rather than gaps:
  *
- * TODO(integration): GET /api/invites/:token, then POST accept against the
- * Privy wallet the invitee claims here.
+ * - **No decline.** Not accepting is the decline, and it stays reversible
+ *   forever, so a button whose only effect is to look final would be a lie.
+ * - **No editing the handle.** It is already on published splits, and those are
+ *   immutable. Offering to change it would be offering something impossible.
+ * - **No mention of a specific game.** The invite is to a studio, and a person
+ *   can be credited across several of its games at different percentages.
+ *
+ * What accepting actually does, in order: the membership row gets your user id,
+ * every split naming that row gets your address, and anything that sold while
+ * you had not claimed it is sent to you. That last part happens after the
+ * response, which is why the arrival screen reads the earnings report twice.
  */
 export function InviteAccept() {
-  const { id } = useParams<{ id: string }>()
-  const invite = useInvite(id)
+  const { id = '' } = useParams()
   const session = useSession()
 
-  // Both of these are tagged with what produced them and read during render,
-  // rather than pushed in from an effect. Same reason as everywhere else in
-  // this app: react-hooks v7 forbids the synchronous setState, and a stale
-  // result then reads as "still loading" for free.
-  const [loaded, setLoaded] = useState<{ slug: string; game: Game | null }>()
-  const [edited, setEdited] = useState<{ id: string; value: string }>()
-  const [busy, setBusy] = useState<'accept' | 'decline' | null>(null)
-
-  const slug = invite?.game?.slug
+  // Tagged with the id it was fetched for and read during render, rather than
+  // cleared inside an effect. Same rule as everywhere else here: react-hooks v7
+  // forbids the synchronous setState, and a stale result reads as loading.
+  const [loaded, setLoaded] = useState<{
+    id: string
+    invite: WireInvite | null
+  } | null>(null)
+  const [claimed, setClaimed] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!slug) return
-    let live = true
-    getGame(slug).then((found) => {
-      if (live) setLoaded({ slug, game: found ?? null })
-    })
-    return () => {
-      live = false
-    }
-  }, [slug])
+    const controller = new AbortController()
+    getInvite(id, controller.signal)
+      .then((invite) => setLoaded({ id, invite }))
+      .catch(() => {
+        if (controller.signal.aborted) return
+        setLoaded({ id, invite: null })
+      })
+    return () => controller.abort()
+  }, [id])
 
-  const game: Game | null | undefined = !slug
-    ? null
-    : loaded?.slug === slug
-      ? loaded.game
-      : undefined
+  const current = loaded?.id === id ? loaded : null
 
-  // The suggested handle arrives with the invite. It's theirs to change
-  // exactly once, here, before it goes on the splits for good.
-  const handle =
-    invite && edited?.id === invite.id ? edited.value : (invite?.handle ?? '')
+  if (current === null) {
+    return (
+      <Shell>
+        <div className="hatch h-48 rounded-card border-2 border-ink" />
+      </Shell>
+    )
+  }
 
-  if (!invite) {
+  const invite = current.invite
+
+  if (invite === null) {
     return (
       <Shell>
         <div className="rounded-card border-2 border-ink bg-paper-sunk px-7 py-9">
@@ -71,8 +81,8 @@ export function InviteAccept() {
             That invite is not here.
           </h1>
           <p className="mt-3 max-w-[46ch] font-body text-[17px] leading-relaxed text-ink-soft">
-            The link may be wrong, or it was opened on a different account. Ask
-            whoever sent it to send it again.
+            The link may be wrong, or it may have been cut short by the mail
+            client that delivered it. Ask whoever sent it to send it again.
           </p>
           <div className="mt-5">
             <ButtonLink to="/" variant="neutral">
@@ -84,11 +94,16 @@ export function InviteAccept() {
     )
   }
 
-  const studioName = invite.studioEns ?? invite.studioName
-  const elsewhere =
-    session.studioId !== null && session.studioId !== invite.studioId
+  // Both of these read the local claim as well as the fetched invite, because
+  // the fetched copy is from before the accept and nothing re-reads it. Without
+  // the first, pressing accept leaves you on the accept screen; without the
+  // second, you land on a screen saying somebody else got there first.
+  const accepted = invite.accepted || claimed === id
+  const mine =
+    claimed === id ||
+    session.studios.some((studio) => studio.id === invite.studio.id)
 
-  if (invite.status === 'accepted') {
+  if (accepted && mine) {
     return (
       <Shell>
         <div className="flex flex-col items-start gap-5 rounded-card border-2 border-ink bg-green px-8 py-10 text-paper shadow-hard">
@@ -96,7 +111,7 @@ export function InviteAccept() {
             You&rsquo;re in
           </Sticker>
           <h1 className="text-[clamp(28px,4.4vw,44px)]">
-            {handle}, of {invite.studioName}.
+            {invite.handle}, of {invite.studio.name}.
           </h1>
           <p className="max-w-[48ch] font-body text-[17px] leading-relaxed">
             Your share of every sale lands in your wallet on settlement. Nobody
@@ -104,15 +119,44 @@ export function InviteAccept() {
           </p>
           <div className="flex flex-wrap gap-3">
             <ButtonLink
-              to={`/studio/${invite.studioId}`}
+              to={`/studio/${invite.studio.id}`}
               variant="neutral"
               size="lg"
             >
-              My studio
+              {invite.studio.name}
             </ButtonLink>
-            <ButtonLink to="/library" variant="ghost" size="lg">
-              <span className="text-paper">My games</span>
+            <ButtonLink to="/money" variant="ghost" size="lg">
+              <span className="text-paper">See what you made</span>
             </ButtonLink>
+          </div>
+        </div>
+
+        <WhatWasWaiting />
+      </Shell>
+    )
+  }
+
+  if (accepted) {
+    return (
+      <Shell>
+        <div className="rounded-card border-2 border-ink bg-paper-sunk px-7 py-9">
+          <h1 className="text-[clamp(26px,4vw,38px)]">
+            This one has already been claimed.
+          </h1>
+          <p className="mt-3 max-w-[48ch] font-body text-[17px] leading-relaxed text-ink-soft">
+            {invite.handle} is on the credits at {invite.studio.name}, and the
+            share is already paying into a wallet. If that was you, sign in on
+            that account and you will find it under My money.
+          </p>
+          <div className="mt-5 flex flex-wrap gap-3">
+            <ButtonLink to={`/studio/${invite.studio.id}`} variant="neutral">
+              {invite.studio.name}
+            </ButtonLink>
+            {!session.signedIn ? (
+              <Button variant="ghost" onClick={() => signIn()}>
+                Sign in
+              </Button>
+            ) : null}
           </div>
         </div>
       </Shell>
@@ -124,15 +168,15 @@ export function InviteAccept() {
       <div className="flex flex-wrap items-start justify-between gap-5">
         <div className="min-w-0">
           <Sticker tone="pink" className="-rotate-2">
-            {invite.status === 'declined' ? 'Declined' : 'Invitation'}
+            Invitation
           </Sticker>
-          <h1 className="mt-3 max-w-[18ch] text-[clamp(28px,4.4vw,44px)]">
-            {invite.fromHandle} put you on {invite.game?.title ?? studioName}.
+          <h1 className="mt-3 max-w-[20ch] text-[clamp(28px,4.4vw,44px)]">
+            {invite.studio.name} put you on the credits.
           </h1>
           <p className="mt-3 max-w-[52ch] font-body text-[17px] leading-relaxed text-ink-soft">
-            {invite.game
-              ? `${invite.game.pct}% of every sale is already yours, credited as ${invite.game.role}. It has been dividing that way since the game went up.`
-              : `You are on the roster at ${studioName}.`}
+            You are credited as {invite.handle}. That was locked when each game
+            went up, and every sale since has been dividing that way. Accepting
+            says which wallet your share pays into.
           </p>
         </div>
         <Freehand
@@ -141,140 +185,185 @@ export function InviteAccept() {
         />
       </div>
 
-      {/* The split as buyers see it, with their row named. Proof, then ask. */}
-      {invite.game ? (
-        <section className="mt-9 rounded-card border-2 border-ink bg-paper-sunk p-5">
-          <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <span className="label-micro text-ink-soft">
-              {invite.game.title}, locked at publish
-            </span>
-            <span className="font-mono text-[11px] text-ink-soft">
-              Nobody can change this, including us
-            </span>
-          </div>
+      <section className="mt-9 rounded-card border-2 border-ink bg-paper-sunk p-5">
+        <span className="label-micro text-ink-soft">
+          What is already true
+        </span>
+        <dl className="mt-3 flex flex-col gap-2.5 border-t-2 border-ink pt-3 font-mono text-[13px]">
+          <Fact label="On the credits as" value={invite.handle} />
+          <Fact
+            label="At"
+            value={invite.studio.name}
+          />
+          <Fact
+            label="Role"
+            value={invite.role === 'owner' ? 'manager' : 'member'}
+          />
+        </dl>
+        <p className="mt-4 border-t-2 border-ink pt-3 font-mono text-[11px] leading-relaxed text-ink-soft">
+          Nobody can change any of that, including us. Splits are fixed at
+          publish.
+        </p>
+      </section>
 
-          {game === undefined ? (
-            <div className="hatch mt-4 h-9 rounded-chip border-2 border-ink" />
-          ) : game ? (
-            <>
-              <SplitBar splits={game.splits} className="mt-4" />
-              <ul className="print-rows mt-5 flex list-none flex-col gap-1 border-t-2 border-ink p-0 pt-3 font-mono text-[13px]">
-                {game.splits.map((member, i) => {
-                  const yours =
-                    member.role === invite.game?.role &&
-                    member.pct === invite.game?.pct
-                  return (
-                    <li
-                      key={member.handle}
-                      style={{ '--i': i } as CSSProperties}
-                      className={cn(
-                        'flex justify-between gap-4 rounded-md px-2 py-1',
-                        yours && 'bg-yellow font-bold',
-                      )}
-                    >
-                      <span className="min-w-0 truncate">
-                        {yours ? 'You' : member.handle}
-                        <span className="font-normal text-ink-soft">
-                          {' '}
-                          · {member.role}
-                        </span>
-                      </span>
-                      <span className="tnum shrink-0 font-bold">
-                        {member.pct}%
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            </>
-          ) : null}
-        </section>
-      ) : null}
-
-      {/* The ask */}
       <section className="mt-8 flex flex-col gap-5 border-t-2 border-ink pt-7">
         {!session.signedIn ? (
           <div className="flex flex-wrap items-center justify-between gap-4 rounded-card border-2 border-ink bg-yellow px-5 py-4">
-            <p className="max-w-[40ch] font-body text-[15px] leading-relaxed text-ink">
-              Sign in as {invite.email} to claim the wallet your share pays
-              into.
+            <p className="max-w-[42ch] font-body text-[15px] leading-relaxed text-ink">
+              Sign in to claim the wallet your share pays into. It is made for
+              you, and there is nothing to install.
             </p>
-            {/* TODO(integration): Privy login, prefilled with the invited address. */}
             <Button variant="primary" onClick={() => signIn()}>
               Sign in
             </Button>
           </div>
         ) : (
           <>
-            <div>
-              <span className="label-micro block text-ink-soft">
-                Your handle
-              </span>
-              <span className="mt-0.5 block font-body text-[13px] text-ink-soft">
-                What buyers see beside your share. Last chance to change it.
-              </span>
-              <input
-                value={handle}
-                onChange={(event) =>
-                  setEdited({ id: invite.id, value: event.target.value })
-                }
-                aria-label="Your handle"
-                className="mt-2 w-full max-w-80 rounded-card border-2 border-ink bg-paper px-3.5 py-2.5 font-mono text-[15px] outline-none focus:shadow-hard-sm"
-              />
-            </div>
+            {/* The account in the tab is the one that gets paid, and it need
+                not be the address this link was emailed to. Saying which is
+                cheaper than a wrong wallet holding somebody's money. */}
+            <p className="font-body text-[15px] leading-relaxed text-ink-soft">
+              Accepting points this share at{' '}
+              <b className="font-mono text-[13px] text-ink">
+                {session.label ?? session.email}
+              </b>
+              . That is the wallet it will pay into, from the next sale and for
+              everything it already owes you.
+            </p>
 
-            {elsewhere ? (
-              // TODO(integration): real accounts can be in several studios. The
-              // mock session holds one, so say what will happen rather than
-              // letting it happen quietly.
-              <p className="font-mono text-[11px] text-ink-soft">
-                You publish as another studio right now. Accepting moves you to{' '}
-                {invite.studioName}.
-              </p>
-            ) : null}
-
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-wrap items-center gap-5">
+              {/* Accepting is a write, and every write fails while Privy is
+                  still creating this account's wallet. Pressing it in that
+                  window used to return "sign out, then sign in again", which
+                  is our race described as the person's chore. Waiting is the
+                  fix, so the button waits. */}
               <Button
                 variant="go"
                 size="lg"
-                disabled={busy !== null || handle.trim() === ''}
+                disabled={busy || session.walletPending}
                 onClick={() => {
-                  setBusy('accept')
-                  acceptInvite(invite.id, handle)
-                    .then((accepted) => {
-                      if (accepted) {
-                        joinStudio()
-                      }
+                  setBusy(true)
+                  setProblem(null)
+                  acceptInvite(id)
+                    .then(() => {
+                      setClaimed(id)
+                      // The membership is a server fact now, so there is
+                      // nothing to set locally, only something to re-read.
+                      joinStudio()
                     })
-                    .finally(() => setBusy(null))
+                    .catch((error: unknown) => setProblem(errorMessage(error)))
+                    .finally(() => setBusy(false))
                 }}
               >
-                {busy === 'accept' ? 'Claiming…' : 'Accept and claim'}
+                {busy
+                  ? 'Claiming…'
+                  : session.walletPending
+                    ? 'One moment…'
+                    : 'Accept and claim'}
               </Button>
 
-              {invite.status === 'pending' ? (
-                <button
-                  type="button"
-                  disabled={busy !== null}
-                  onClick={() => {
-                    setBusy('decline')
-                    declineInvite(invite.id).finally(() => setBusy(null))
-                  }}
-                  className="cursor-pointer border-0 bg-transparent font-mono text-[12px] text-ink-soft underline underline-offset-2 disabled:opacity-45"
-                >
-                  Not now
-                </button>
-              ) : (
-                <span className="font-mono text-[12px] text-ink-soft">
-                  You declined this. The share is still there if you change your
-                  mind.
-                </span>
-              )}
+              <span className="max-w-[34ch] font-mono text-[11px] leading-relaxed text-ink-soft">
+                {session.walletPending
+                  ? 'Setting up your wallet. This takes a few seconds.'
+                  : 'Nothing expires. The share is yours whether you open this today or in a year.'}
+              </span>
             </div>
+
+            {problem ? (
+              <p role="alert" className="font-body text-sm text-red">
+                {problem}
+              </p>
+            ) : null}
           </>
         )}
       </section>
     </Shell>
+  )
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-wrap justify-between gap-x-4 gap-y-0.5">
+      <dt className="text-ink-soft">{label}</dt>
+      <dd className="min-w-0 truncate font-semibold">{value}</dd>
+    </div>
+  )
+}
+
+/**
+ * What accepting released.
+ *
+ * The transfers go out after the accept responds, so the first read of the
+ * earnings report usually still counts the money as held. Read twice: once now
+ * for whatever was already settled, once after the transfers have had time to
+ * land.
+ *
+ * Held money needs no button and shouldn't get one. A share is now paid to the
+ * collaborator's EVM alias directly, and under HIP-542 that payment creates
+ * their Hedera account as a side effect, so "held" means exactly one thing:
+ * the invite had not been accepted. Accepting is what you just did, which is
+ * why anything still held here is in flight rather than stuck.
+ */
+function WhatWasWaiting() {
+  const [report, setReport] = useState<WirePersonalEarnings | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    function read() {
+      getMyEarnings(controller.signal)
+        .then(setReport)
+        .catch(() => {
+          // A number that will not load is not worth an error box on the one
+          // screen whose job is to say welcome.
+        })
+    }
+    read()
+    const settle = window.setTimeout(read, 8000)
+    return () => {
+      controller.abort()
+      window.clearTimeout(settle)
+    }
+  }, [])
+
+  if (report === null) return null
+
+  const earned = report.totals.earned.display
+  const held = report.totals.held.display
+
+  return (
+    <section className="mt-8 rounded-card border-2 border-ink bg-paper p-5 shadow-hard">
+      <span className="label-micro text-ink-soft">What was waiting</span>
+
+      {earned === 0 && held === 0 ? (
+        <p className="mt-2 max-w-[48ch] font-body text-[15px] leading-relaxed">
+          Nothing has sold yet. When it does, your share arrives without anyone
+          having to send it.
+        </p>
+      ) : (
+        <>
+          <p className="mt-1.5 font-mono tnum text-3xl font-bold text-green">
+            {formatAmount(earned)}
+          </p>
+          <p className="mt-1 max-w-[48ch] font-body text-[15px] leading-relaxed text-ink-soft">
+            earned across everything you are credited on.
+          </p>
+        </>
+      )}
+
+      {held > 0 ? (
+        <p className="mt-4 border-t-2 border-ink pt-3 font-body text-[15px] leading-relaxed">
+          <b className="font-mono tnum">{formatAmount(held)}</b> of that is on
+          its way now. It was held while the invite was unclaimed, and accepting
+          released it. There is nothing to claim.
+        </p>
+      ) : null}
+
+      <div className="mt-4">
+        <ButtonLink to="/money" variant="neutral" size="sm">
+          My money
+        </ButtonLink>
+      </div>
+    </section>
   )
 }
 

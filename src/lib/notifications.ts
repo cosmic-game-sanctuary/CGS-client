@@ -204,7 +204,10 @@ export function adaptNotification(wire: WireNotification): AppNotification | nul
         title: 'Money that was waiting for you arrived',
         detail: 'It is in your wallet now.',
         amountUsd: num(p, 'amountUsd'),
-        to: '/library',
+        // The row carries no game, because a settlement can cover shares from
+        // several at once. The money page is the only screen that can show all
+        // of them, and it is where the balance this just changed is printed.
+        to: '/money',
       }
 
     case 'build_updated': {
