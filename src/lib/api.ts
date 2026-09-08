@@ -74,10 +74,40 @@ export class ApiError extends Error {
     this.details = details
   }
 
-  /** `VALIDATION_FAILED` puts per-field messages in `details`. */
+  /**
+   * `VALIDATION_FAILED` puts per-field messages in `details`, in one of two
+   * shapes, and reading only the first is how a useful message becomes a
+   * useless one.
+   *
+   * The validate middleware sends Zod's `flatten()`, so `{ fieldErrors: { to:
+   * ["..."] } }`. A route handler that refuses something Zod cannot check
+   * throws `Errors.validationFailed({ to: "..." })` instead, which arrives as a
+   * plain map of field to sentence. That second kind is where the *interesting*
+   * refusals live — a destination with no account, a sale price above the
+   * current one, an expired intent — and they were all being reported as "that
+   * request doesn't look right".
+   */
   get fieldErrors(): Record<string, string[]> {
-    const d = this.details as { fieldErrors?: Record<string, string[]> } | undefined
-    return d?.fieldErrors ?? {}
+    const details = this.details
+    if (!details || typeof details !== 'object') return {}
+
+    const flattened = (details as { fieldErrors?: Record<string, string[]> })
+      .fieldErrors
+    if (flattened) return flattened
+
+    const out: Record<string, string[]> = {}
+    for (const [field, message] of Object.entries(details)) {
+      if (typeof message === 'string') out[field] = [message]
+      else if (Array.isArray(message)) {
+        out[field] = message.filter((m): m is string => typeof m === 'string')
+      }
+    }
+    return out
+  }
+
+  /** The first field message there is, whatever the field is called. */
+  get firstFieldError(): string | undefined {
+    return Object.values(this.fieldErrors).flat()[0]
   }
 }
 

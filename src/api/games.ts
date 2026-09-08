@@ -73,6 +73,8 @@ export async function getGameWithState(
       owned: boolean
       wishlisted: boolean
       wishlistCount: number
+      /** The agent's ceiling on this game, in units. Null for a plain save. */
+      agentMaxUnits: number | null
     }
   | undefined
 > {
@@ -88,6 +90,7 @@ export async function getGameWithState(
     // predates the wishlist broke. Either is correct; prefer the new one.
     wishlisted: wire.wishlisted ?? wire.liked ?? false,
     wishlistCount: wire.wishlistCount ?? wire.likeCount ?? 0,
+    agentMaxUnits: wire.agentMaxUnits ?? null,
   }
 }
 

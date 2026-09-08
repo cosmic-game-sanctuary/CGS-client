@@ -24,6 +24,10 @@ export type WireNotificationType =
   | 'sale'
   | 'invite'
   | 'agent_fired'
+  /** Stage 18: one agent, a shared budget, several games in one round. */
+  | 'agent_purchased'
+  | 'agent_asked'
+  | 'agent_expired'
   | 'published'
   | 'payout_held'
   | 'payout_settled'

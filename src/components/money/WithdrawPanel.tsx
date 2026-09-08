@@ -278,9 +278,8 @@ export function WithdrawPanel() {
  * is not a failure at all and should not read as one.
  */
 function withdrawalMessage(error: unknown): string {
-  if (error instanceof ApiError && error.code === 'VALIDATION_FAILED') {
-    const fields = error.fieldErrors
-    const first = fields.to?.[0] ?? fields.amountUnits?.[0] ?? fields.intentId?.[0]
+  if (error instanceof ApiError) {
+    const first = error.firstFieldError
     if (first) return first
   }
   return errorMessage(error)

@@ -141,9 +141,50 @@ export function adaptNotification(wire: WireNotification): AppNotification | nul
       }
     }
 
-    // The other four things an agent can do, none of which is buying. All of
-    // them are about the buyer's money sitting in a wallet that cannot spend
-    // it, so all of them need an action, not a status.
+    // Stage 18's three. `agent_fired` above is the old one-agent-per-game
+    // shape; these are what one agent spending a shared budget looks like.
+    case 'agent_purchased': {
+      const chosen = p.chosenGameIds
+      const count =
+        num(p, 'count') ?? (Array.isArray(chosen) ? chosen.length : undefined)
+      return {
+        ...base,
+        kind: 'agent',
+        title:
+          count && count > 1
+            ? `Your agent bought ${count} games`
+            : 'Your agent bought something',
+        // One notification per decision, not per game. Three games bought in
+        // one round is one round of thinking, and one thing to read.
+        detail: 'The keys are in your library.',
+        amountUsd: num(p, 'spentUsd') ?? num(p, 'priceUsd'),
+        to: '/agent',
+      }
+    }
+
+    case 'agent_asked':
+      return {
+        ...base,
+        kind: 'agent',
+        title: 'Your agent wants a decision',
+        // The deadline is the reason this cannot wait, so it leads.
+        detail: 'It found more than it can afford. Answer before the deadline, or it decides.',
+        to: '/agent',
+      }
+
+    case 'agent_expired':
+      return {
+        ...base,
+        kind: 'agent',
+        title: 'Your agent finished',
+        detail: 'It reached the date you set. Anything left came back to your wallet.',
+        amountUsd: num(p, 'refundedUsd'),
+        to: '/agent',
+      }
+
+    // The rest of what an agent can do, none of which is buying. All of them
+    // are about the buyer's money sitting in a wallet that cannot spend it, so
+    // all of them need an action, not a status.
     case 'agent_underfunded':
       return {
         ...base,

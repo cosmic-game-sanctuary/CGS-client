@@ -188,7 +188,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Integrated against the live API. Money, GameKeys, builds, invites, payouts, withdrawals, sales and paid trials are all real and tested in a browser. **The agent is the only thing left**, and it is fully built on the server.
+**Stage:** Integrated against the live API. Money, GameKeys, builds, invites, payouts, withdrawals, sales and paid trials are all real and tested in a browser. **The agent is built on both sides and partly tested** — see Next up for what is still unverified.
 
 > **The database is shared and a migration is a deploy.** Both sides point at one Neon database, so branching code does not branch the schema. Stage 18 dropped `wishlist_agents.target_game_id`, which broke the *other* checkout with no code change on that side. If the server throws `column … does not exist`, pull before debugging.
 **Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@privy-io/react-auth`, `@iconify-json/streamline-freehand` (dev)
@@ -217,7 +217,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
    - The wishlist row needs `agentMaxUnits`, `agentNote`, `agent`. (`WireGame.promotion` is done, from W12.)
 1. ~~**W12 sales.**~~ **Done, tested 2026-09-08.** See the log entry below. **One gap, and it is the server's:** `promotion` is on the game detail route only, so a catalog card shows the discounted price (which is the game's real price while a sale runs) but cannot say it is discounted.
 2. ~~**W13 paid trials.**~~ **Done, tested 2026-09-08.** Two server changes were needed and are on `frontend-integration` in CGS-server. See the log entry below.
-3. **W9 the agent, rebuilt as 1:N.** One agent per person, one budget, many wants. Its own page, wants set from the game listing, a decisions feed, and the ask-first answer. The largest piece and the headline claim.
+3. ~~**W9 the agent, rebuilt as 1:N.**~~ **Built, not fully tested.** Creating, funding, setting a want and an uncontested buy all work. **The deferral logic, the wind-down and the two decision-feed fixes are untested.** See the log entry below.
 4. Then likes and comments, which have API modules and no UI, then Impeccable per screen and swipe discovery if there is time.
 
 **Untested:** cloud saves (no build we have writes to storage) and the failed-payout path (nothing has failed yet).
@@ -307,6 +307,9 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 | Where money out lives | `/money`, a third page behind the profile menu | Earnings are cross-studio, so no studio page can hold them, and they are not games you own, so the library can't. Withdrawal goes beside the number it acts on, not in a 264px dropdown. |
 | Withdrawal retry | None, unlike a purchase | An expired intent and a network refusal come back as the same error on the same field. One of them may have moved money, so retrying is the person's call. |
 | Held payouts | Stated, never claimable | They settle by themselves when the wallet first has a Hedera account. A claim button would be a button that does nothing. |
+| When the agent spends | At the last responsible moment, not the first chance | Two $1 games and $1.20: whichever went on sale first was bought, and the outcome was decided by which studio pressed a button. Money earmarked for another want is not spare, so a purchase that forecloses one is a decision, not a reflex. |
+| Ending a sale early | Winds down to its last hour, never instantly | The buffer that lets an agent act on a deadline is the notice a studio has to give. Pulling a price instantly would make our own deferral cost a buyer the game. One constant, two uses. |
+| An immediate end | An operator script, not a button | A mistake is not a decision. `npm run sale:end` keeps the undo without making "renege on a published deadline" a normal thing to click. |
 | The invite link | Copyable from the roster | Email is the only channel that reaches somebody with no account, and an unverified domain can only mail our own address. An invite that bounces is a share nobody can claim. |
 | A sale on screen | The deadline, not the discount | Any store can print a lower number. Both ends of a sale are on a public topic before it matters, so the countdown is checkable. Same argument the split bar makes about money. |
 | Countdown tick rate | Per second under an hour, every 30s above it | A tab left open on a three-day sale would otherwise re-render a quarter of a million times to change nothing. |
@@ -315,6 +318,19 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 ### Log
 
 _Newest first._
+
+#### 2026-09-08 (W9 the agent) — Suparno
+
+**Built, not fully tested.** Creating, funding, setting a want and an uncontested buy are verified. The deferral logic and the wind-down are not.
+
+- **`/agent`**: balance, the want list, and the decisions feed. `src/mocks/agent.ts` and the old `AgentPanel` are gone; the three Stage 18 notification types have copy. Wants are set on the game listing, because choosing a game and choosing a ceiling for it are one decision.
+- **Funding is the withdraw flow**, pointed at the agent's address. There is no funding route and does not need to be one.
+- **The scenario the agent exists for could not arise, and the cause was one line.** `needsJudgement` asked only whether the greedy plan left something eligible unbought. Two $1 games and a $1.20 budget never go on sale in the same instant, so the first to drop was the only thing eligible, the plan cleared it, and the money went to whichever studio pressed a button first. **No decision was ever made.** It now also asks whether spending forecloses another want, which is the real question.
+- **The model could not see what it could not afford.** `eligibleWantsFor` dropped anything above its ceiling, so every purchase looked free. `wantsFor` returns `{ eligible, pending }` and the pending half goes into the prompt **without ids**, so it is context the model cannot accidentally buy from.
+- **The prompt argued for the opposite behaviour** — literally "something ending soon should usually be bought now, not held". Rewritten around when to spend rather than only what to buy.
+- **Ending a sale early would have cost the buyer the game**, which is our change doing the harm. `windDownPromotion` sets the end an hour out instead. The hour is `PURCHASE_BUFFER_MS`, imported rather than redeclared: the same buffer that lets an agent act is the notice a studio gives, so the agent is guaranteed one last decision at the sale price.
+- **Two decision-feed bugs found by looking at it.** A bought game stayed in "trying to buy", because a wishlist row survives being bought and carries no owned flag. And `chosenGameIds` means "the games this decision is about", not "the games it took" — so a *declined* game rendered green. Green is bought, yellow is held, struck-through is passed on.
+- **Rounds are logged now.** The only agent log line was `agent bought`, so a round ending in a hold was invisible from outside the database. There is one line per round with what was eligible, what else was wanted, whether the model was asked, and its reasoning.
 
 #### 2026-09-08 (W13 paid trials) — Suparno
 

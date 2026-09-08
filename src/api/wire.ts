@@ -108,6 +108,12 @@ export interface WireGame {
   owned?: boolean
   liked?: boolean
   wishlisted?: boolean
+  /**
+   * The ceiling your agent will buy this at, and your note to it. Detail only,
+   * null for a plain saved game and for anyone signed out.
+   */
+  agentMaxUnits?: number | null
+  agentNote?: string | null
 }
 
 export interface WireCatalog {

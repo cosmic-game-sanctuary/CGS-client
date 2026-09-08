@@ -22,6 +22,9 @@ import { fund, signIn, signOut, useSession } from '@/auth/session'
  *   third page, and the only one added since this list was written. It is
  *   cross-studio, so a studio page cannot hold it, and it is not about games
  *   you hold, so the library cannot either.
+ * - **My agent** (`/agent`) — its balance, what it is trying to buy, and what
+ *   it has actually done. A page because it runs for weeks and holds its own
+ *   money; the ceiling for one game is still set on that game's listing.
  * - **Publish** (`/publish`) — an action, not a place. A menu item, not a tab.
  * - **Wallet** — balance, top-up, and the address to send to, inline here.
  *   There is nothing else to configure, so a settings page would be an empty
@@ -213,6 +216,7 @@ export function ProfileMenu() {
               />
             ) : null}
             <Item to="/money" label="My money" onGo={() => setOpen(false)} />
+            <Item to="/agent" label="My agent" onGo={() => setOpen(false)} />
             <Item
               to={session.studioId ? `/studio/${session.studioId}` : '/studio/new'}
               label={session.studioId ? 'My studio' : 'Set up a studio'}

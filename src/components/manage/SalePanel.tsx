@@ -193,21 +193,18 @@ function RunningSale({
           onClick={() => void run('end', () => endSale(gameId, promotion.id))}
         >
           {busy === 'end'
-            ? 'Ending…'
+            ? 'Winding down…'
             : scheduled
               ? 'Cancel it'
-              : 'End it now'}
+              : 'Wind it down'}
         </Button>
       </div>
 
-      {/* Only the scheduled case says anything. A running sale's controls
-          explain themselves, and a second sentence under them was telling the
-          reader something they had not asked about. */}
-      {scheduled ? (
-        <p className="mt-3 font-mono text-[11px] leading-relaxed text-ink-soft">
-          Nothing has been announced yet. Cancelling now leaves no trace.
-        </p>
-      ) : null}
+      <p className="mt-3 font-mono text-[11px] leading-relaxed text-ink-soft">
+        {scheduled
+          ? 'Nothing has been announced yet. Cancelling now leaves no trace.'
+          : 'Winding down sets the end an hour from now rather than stopping it dead. People and their agents planned around the deadline you published, and an hour is what it takes to act on it.'}
+      </p>
 
       {problem ? (
         <p role="alert" className="mt-3 font-body text-sm text-red">

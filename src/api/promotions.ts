@@ -98,7 +98,20 @@ export function extendSale(
   )
 }
 
-/** Ends it now and restores the price. A scheduled one is simply cancelled. */
+/**
+ * Bring a sale to an end early.
+ *
+ * A running sale is **wound down to its last hour**, not stopped dead. The
+ * deadline was published on a public topic, and an agent may have chosen to
+ * wait for it rather than spend its budget on the first thing that got cheap.
+ * Pulling the price instantly would cost that buyer a game they were going to
+ * get, which is our own design costing them the purchase. An hour is exactly
+ * how long an agent is guaranteed to need to act on a deadline, so it is what a
+ * studio has to give.
+ *
+ * A sale that never started is cancelled outright, since nothing was announced.
+ * One already inside its final hour is refused: it is on its way out anyway.
+ */
 export function endSale(
   gameId: string,
   promotionId: string,

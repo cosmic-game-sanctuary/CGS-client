@@ -16,13 +16,13 @@ import {
 } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { CheckoutOverlay } from '@/components/checkout/CheckoutOverlay'
-import { AgentPanel } from '@/components/listing/AgentPanel'
 import { MediaGallery } from '@/components/listing/MediaGallery'
 import { PlayOverlay } from '@/components/play/LightsDown'
 import { ReportDialog } from '@/components/listing/ReportDialog'
 import { ReviewForm } from '@/components/listing/ReviewForm'
 import { ReviewList } from '@/components/listing/ReviewList'
 import { WishlistButton } from '@/components/listing/WishlistButton'
+import { WantButton } from '@/components/listing/WantButton'
 import { SaleBanner } from '@/components/listing/SaleBanner'
 import { TrialPanel } from '@/components/listing/TrialPanel'
 import { TrialSession } from '@/components/play/TrialSession'
@@ -44,6 +44,8 @@ export function GameListing() {
   // game from inside a trial flips the box to its owned state, which would
   // unmount the panel and take the running game down with it.
   const [trying, setTrying] = useState<WireTrial | null>(null)
+  // Bumped when a want changes, so the listing re-reads its own state.
+  const [reloadTick, setReloadTick] = useState(0)
   const [posted, setPosted] = useState<Review[]>([])
   // Both results carry the id they were fetched for; anything stale reads as
   // loading during render rather than being cleared inside the effect.
@@ -54,6 +56,7 @@ export function GameListing() {
     owned: boolean
     wishlisted: boolean
     wishlistCount: number
+    agentMaxUnits: number | null
   } | null>(null)
   const [loadedReviews, setLoadedReviews] = useState<{
     gameId: string
@@ -77,6 +80,7 @@ export function GameListing() {
           owned: found?.owned ?? false,
           wishlisted: found?.wishlisted ?? false,
           wishlistCount: found?.wishlistCount ?? 0,
+          agentMaxUnits: found?.agentMaxUnits ?? null,
         })
         if (!found) return
         return getReviews(found.game.id, controller.signal).then((reviews) =>
@@ -94,12 +98,13 @@ export function GameListing() {
           owned: false,
           wishlisted: false,
           wishlistCount: 0,
+          agentMaxUnits: null,
         })
       })
     return () => controller.abort()
     // `signedIn` is here because `owned` only comes back with a token, so
     // signing in has to re-ask rather than leave the buy box stale.
-  }, [slug, session.signedIn])
+  }, [slug, session.signedIn, reloadTick])
 
   // null = still loading, undefined game = no such game
   const current = loaded?.slug === slug ? loaded : null
@@ -305,6 +310,17 @@ export function GameListing() {
                   <p className="mt-3 font-body text-[13px] leading-relaxed text-ink-soft">
                     Starts in this tab. No install. All sales final.
                   </p>
+                  {/* Buying and setting a ceiling are the same decision made
+                      two ways, so they sit together under the buy box rather
+                      than on a page of their own. */}
+                  <WantButton
+                    gameId={game.id}
+                    priceUsd={game.priceUsd}
+                    saved={saved.wishlisted}
+                    want={current.agentMaxUnits}
+                    onChanged={() => setReloadTick((n) => n + 1)}
+                  />
+
                   <TrialPanel gameId={game.id} onTry={setTrying} />
                   {/* Under the buy button, not beside it. Saving is what you
                       do instead of buying, so it reads as the second option
@@ -332,7 +348,6 @@ export function GameListing() {
               </div>
             </div>
 
-            {!owned && game.priceUsd > 0 ? <AgentPanel game={game} /> : null}
 
             <div className="flex flex-wrap gap-2">
               {game.tags.map((tag) => (

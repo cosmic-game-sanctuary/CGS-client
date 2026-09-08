@@ -2,19 +2,17 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { Cover } from '@/components/Cover'
 import { Freehand } from '@/components/icons/Freehand'
-import { PriceChip } from '@/components/ui/PriceChip'
 import { SiteFooter } from '@/components/SiteFooter'
 import { SiteHeader } from '@/components/SiteHeader'
 import { PlayOverlay } from '@/components/play/LightsDown'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { Reveal } from '@/components/ui/Reveal'
-import { useAgents } from '@/mocks/agent'
 import { WishlistSection } from '@/components/library/WishlistSection'
 import { Receipts } from '@/components/library/Receipts'
-import { getGame, listGames } from '@/api/games'
+import { getGame } from '@/api/games'
 import { getLibrary, type WireLibraryGame } from '@/api/library'
+import { getAgent } from '@/api/agent'
 import { errorMessage } from '@/lib/api'
-import { formatPrice } from '@/lib/format'
 import { signIn, useSession } from '@/auth/session'
 import type { Game } from '@/mocks/types'
 
@@ -34,9 +32,6 @@ export function Library() {
     games: WireLibraryGame[]
     error: string | null
   } | null>(null)
-  // Still mock-backed: agents are W10. The rest of this screen is real.
-  const agents = useAgents()
-  const [watchable, setWatchable] = useState<Game[]>([])
 
   const signedIn = session.signedIn
 
@@ -54,16 +49,6 @@ export function Library() {
     // signal that this list is now out of date.
   }, [signedIn, session.balanceUnits])
 
-  // The agent rows name games the library doesn't contain yet, by definition.
-  useEffect(() => {
-    if (agents.length === 0) return
-    const controller = new AbortController()
-    listGames({ limit: 60 }, controller.signal)
-      .then(({ games }) => setWatchable(games))
-      .catch(() => {})
-    return () => controller.abort()
-  }, [agents.length])
-
   // The stub carries what it needs to identify a game; the play surface wants
   // the whole thing. Fetched on the click rather than up front, so opening
   // this page is one request instead of one per game you own.
@@ -79,15 +64,6 @@ export function Library() {
   }
 
   const owned = loaded?.games
-  // A trigger is a game you're trying to get, so it belongs beside the ones
-  // you got. This is why there is no separate agents page.
-  const watching = agents
-    .filter((agent) => agent.status === 'watching')
-    .map((agent) => ({
-      agent,
-      game: watchable.find((game) => game.id === agent.gameId),
-    }))
-    .filter((row) => row.game !== undefined)
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -167,38 +143,11 @@ export function Library() {
         )}
         <WishlistSection signedIn={session.signedIn} />
 
-        {watching.length > 0 ? (
-          <section className="mt-12">
-            <div className="flex items-baseline gap-3">
-              <h2 className="text-2xl">Waiting on a price</h2>
-              <span className="font-mono text-[11px] text-ink-soft">
-                {watching.length} agent{watching.length === 1 ? '' : 's'} watching
-              </span>
-            </div>
-            <ul className="mt-4 flex list-none flex-col gap-2.5 p-0">
-              {watching.map(({ agent, game }) => (
-                <li key={agent.id}>
-                  <Link
-                    to={`/game/${game!.slug}`}
-                    className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border-2 border-ink bg-blue px-4 py-3 text-paper no-underline transition-transform duration-130 ease-out hover:-translate-y-px"
-                  >
-                    <Freehand name="share-radar" className="h-8 w-8 shrink-0" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-wonk text-[15px]">
-                        {game!.title}
-                      </span>
-                      <span className="block truncate font-mono text-[11px] text-paper/75">
-                        buys below {formatPrice(agent.triggerUsd)}, holds{' '}
-                        {formatPrice(agent.balanceUsd)}
-                      </span>
-                    </span>
-                    <PriceChip usd={game!.priceUsd} size="sm" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ) : null}
+        {/* Wants used to be listed here, back when an agent was one game and a
+            trigger. One agent with a shared budget is a thing with its own
+            page, and duplicating its list here would give two answers to
+            "what is it buying". A pointer, not a copy. */}
+        <AgentNote signedIn={session.signedIn} />
 
         <Receipts signedIn={session.signedIn} />
       </main>
@@ -209,6 +158,49 @@ export function Library() {
         <PlayOverlay game={playing} onClose={() => setPlaying(null)} />
       ) : null}
     </div>
+  )
+}
+
+/**
+ * A line to the agent page, for anyone who has one.
+ *
+ * Deliberately small. Games you are *trying* to get still belong beside the
+ * ones you got, but the list itself lives with the budget it spends, and two
+ * copies of it would be two things to keep in step.
+ */
+function AgentNote({ signedIn }: { signedIn: boolean }) {
+  const [has, setHas] = useState(false)
+
+  useEffect(() => {
+    if (!signedIn) return
+    const controller = new AbortController()
+    getAgent(controller.signal)
+      .then(() => setHas(true))
+      .catch(() => {
+        // A 404 is the normal state: most people have no agent.
+      })
+    return () => controller.abort()
+  }, [signedIn])
+
+  if (!has) return null
+
+  return (
+    <section className="mt-12">
+      <Link
+        to="/agent"
+        className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-card border-2 border-ink bg-blue px-5 py-4 text-paper no-underline shadow-hard transition-transform duration-130 ease-out hover:-translate-y-px"
+      >
+        <Freehand name="share-radar" className="h-9 w-9 shrink-0" />
+        <span className="min-w-0 flex-1">
+          <span className="block font-wonk text-[17px]">
+            Your agent is watching prices for you
+          </span>
+          <span className="block font-mono text-[11px] text-paper/75">
+            What it is trying to buy, and what it has done
+          </span>
+        </span>
+      </Link>
+    </section>
   )
 }
 

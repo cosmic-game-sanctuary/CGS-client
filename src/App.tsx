@@ -3,6 +3,7 @@ import { ScrollManager } from '@/components/ScrollManager'
 import { Catalog } from '@/routes/Catalog'
 import { GameListing } from '@/routes/GameListing'
 import { InviteAccept } from '@/routes/InviteAccept'
+import { Agent } from '@/routes/Agent'
 import { Library } from '@/routes/Library'
 import { Money } from '@/routes/Money'
 import { Profile } from '@/routes/Profile'
@@ -26,6 +27,10 @@ export default function App() {
         <Route path="/studio/new" element={<StudioSetup />} />
         <Route path="/studio/:id" element={<Studio />} />
         <Route path="/library" element={<Library />} />
+        {/* An agent runs for weeks and holds its own money, so it is closer to
+            a wallet than to a purchase. Setting a ceiling on one game still
+            happens on that game's listing. */}
+        <Route path="/agent" element={<Agent />} />
         {/* What you earned, and the way out of the wallet. Its own page rather
             than a panel in the profile menu: a form that can send a whole
             balance to a typed address needs more room than a dropdown. */}
