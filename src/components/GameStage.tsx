@@ -28,13 +28,22 @@ export function GameStage({
   playUrl,
   onExit,
   children,
+  hud,
   className,
 }: {
   game: Game
   /** Absolute URL of the build's entry point, once something has fetched one. */
   playUrl?: string | null
   onExit?: () => void
+  /** Replaces the frame entirely. Checkout uses it to hold the surface dark. */
   children?: ReactNode
+  /**
+   * Drawn *over* the running game rather than instead of it, which is the
+   * difference between this and `children`. The trial meter is the only user:
+   * it has to sit on the play surface without being a modal, because the game
+   * underneath is the thing it is talking about.
+   */
+  hud?: ReactNode
   className?: string
 }) {
   const frameRef = useRef<HTMLDivElement>(null)
@@ -174,6 +183,8 @@ export function GameStage({
                 </span>
               </div>
             ))}
+
+          {hud}
 
           <button
             type="button"

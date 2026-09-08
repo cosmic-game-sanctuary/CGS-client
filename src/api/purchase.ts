@@ -130,7 +130,22 @@ export async function mountGrant(
   grant: AccessGrant,
   onProgress?: (fraction: number) => void,
 ): Promise<string> {
-  const zip = await requestBytes(grant.buildPath, {
+  return mountBuildFromPath(grant.buildPath, onProgress)
+}
+
+/**
+ * The same thing, for a caller that has no grant to show for itself.
+ *
+ * A trial is the case: buying a chunk hands back a settlement id and no access
+ * grant, because a chunk buys time rather than ownership. The build route
+ * decides whether to serve it, from the payment record, so the path is all a
+ * caller ever needs to know.
+ */
+export async function mountBuildFromPath(
+  buildPath: string,
+  onProgress?: (fraction: number) => void,
+): Promise<string> {
+  const zip = await requestBytes(buildPath, {
     // Downloading is most of the wait, so it gets most of the bar. The unpack
     // that follows is fast and has no measurable progress of its own.
     onProgress: onProgress && ((loaded, total) => onProgress((loaded / total) * 0.9)),
@@ -138,6 +153,11 @@ export async function mountGrant(
   const mounted = await mountBuild(zip)
   onProgress?.(1)
   return mounted.entry
+}
+
+/** Where a game's build lives. The route decides who may have it. */
+export function buildPathFor(gameId: string): string {
+  return `/api/games/${gameId}/build.zip`
 }
 
 /** Chain truth, for the moment the GameKey actually lands. */

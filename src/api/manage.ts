@@ -65,7 +65,16 @@ export interface WireManageStats {
 }
 
 export interface WireManageView {
-  game: WireGame
+  /**
+   * The listing plus the raw columns only its studio sees. The manage route
+   * spreads the database row, so the trial config arrives here and nowhere a
+   * shopper looks.
+   */
+  game: WireGame & {
+    trialChunkPriceUnits: number | null
+    trialChunkMinutes: number
+    trialMaxChunks: number | null
+  }
   media: WireMedia[]
   builds: WireBuildVersion[]
   priceHistory: WirePricePoint[]
@@ -91,6 +100,15 @@ export interface EditGameBody {
   priceUnits?: number
   /** Picks an existing image as the cover. Does not upload one. */
   coverMediaId?: string | null
+  /**
+   * Trial config. Price and cap are set together and cleared together, both
+   * `null` to turn trials off — the server refuses one without the other,
+   * because a chunk price with no cap is an open meter and a cap with no price
+   * is nothing. `chunkPrice × maxChunks` may not exceed the game's price.
+   */
+  trialChunkPriceUnits?: number | null
+  trialMaxChunks?: number | null
+  trialChunkMinutes?: number
 }
 
 /**

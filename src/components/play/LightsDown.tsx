@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { GameStage } from '@/components/GameStage'
 import { Button } from '@/components/ui/Button'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,7 @@ export function LightsDown({
   beats,
   active = true,
   playUrl,
+  overlay,
   onExit,
 }: {
   game: Game
@@ -34,6 +35,12 @@ export function LightsDown({
   active?: boolean
   /** The build to run, once something has fetched one. */
   playUrl?: string | null
+  /**
+   * Rendered over the running game, once it is running. The trial's meter is
+   * the only user of this: it has to sit on the play surface without being a
+   * modal, because the game underneath is what it is talking about.
+   */
+  overlay?: ReactNode
   onExit: () => void
 }) {
   const [index, setIndex] = useState(-1)
@@ -74,14 +81,36 @@ export function LightsDown({
     beatsRef.current = beats
   }, [beats])
 
+  // `started` is what actually makes "exactly once" true, and it was missing.
+  //
+  // StrictMode mounts, unmounts and mounts again in development, so an effect
+  // with no guard runs twice — and a cancelled run is not a stopped one. The
+  // flag only suppresses state updates; the `await` already in flight carries
+  // on and settles. A trial bought two chunks for one press this way, and a
+  // purchase was one intent-expiry retry away from the same. Whether a payment
+  // happens twice must not depend on how React chooses to schedule effects.
+  const started = useRef(false)
+
+  // Separately from that: whether this instance is still on screen. A
+  // StrictMode remount re-arms it, so the one run that did start keeps being
+  // allowed to report progress after the fake unmount. A real unmount leaves
+  // it false and the run goes quiet.
+  const live = useRef(true)
   useEffect(() => {
-    if (!active) return
-    let cancelled = false
+    live.current = true
+    return () => {
+      live.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!active || started.current) return
+    started.current = true
     const sequence = beatsRef.current
 
     async function run() {
       for (let i = 0; i < sequence.length; i++) {
-        if (cancelled) return
+        if (!live.current) return
         const beat = sequence[i]
         setIndex(i)
         setProgress(0)
@@ -96,21 +125,18 @@ export function LightsDown({
               timers.current.push(window.setTimeout(resolve, beat.ms))
             }),
             beat.work?.((fraction) => {
-              if (!cancelled) setProgress(fraction)
+              if (live.current) setProgress(fraction)
             }),
           ])
         } catch (error) {
-          if (!cancelled) setFailure(errorMessage(error))
+          if (live.current) setFailure(errorMessage(error))
           return
         }
       }
-      if (!cancelled) setIndex(sequence.length)
+      if (live.current) setIndex(sequence.length)
     }
 
     void run()
-    return () => {
-      cancelled = true
-    }
   }, [active])
 
   const playing = index >= beats.length
@@ -126,7 +152,7 @@ export function LightsDown({
       {failure ? (
         <Failure message={failure} onExit={beginExit} />
       ) : playing ? (
-        <GameStage game={game} playUrl={playUrl} onExit={beginExit} />
+        <GameStage game={game} playUrl={playUrl} hud={overlay} onExit={beginExit} />
       ) : (
         <BootSequence beats={beats} index={index} progress={progress} />
       )}

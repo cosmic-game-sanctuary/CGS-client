@@ -20,7 +20,11 @@ export function useCountdown(deadline: string): string | null {
   const [now, setNow] = useState(() => Date.now())
 
   const remaining = target - now
-  const over = remaining <= 0
+  // An absent or unparseable deadline counts as over, so no interval is left
+  // ticking for a clock that will never show anything. A trial meter mounts
+  // before its first chunk is paid for and would otherwise wake the page every
+  // thirty seconds to render nothing.
+  const over = !Number.isFinite(target) || remaining <= 0
   // Per second under an hour. Above that the string does not change often
   // enough to be worth waking the page for, and a tab left open on a three-day
   // sale should not re-render a quarter of a million times.
@@ -35,7 +39,7 @@ export function useCountdown(deadline: string): string | null {
     // changes every tick and would tear the interval down on each one.
   }, [fine, over])
 
-  if (!Number.isFinite(target) || over) return null
+  if (over) return null
   return formatRemaining(remaining)
 }
 

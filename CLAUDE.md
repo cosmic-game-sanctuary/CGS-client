@@ -59,6 +59,7 @@ Smaller pieces:
 | Your library | ✅ done | `/library`. Owned keys as ticket stubs, plus the triggers you're waiting on. |
 | Your money | ✅ done | `/money`. What you earned across every team, what is still owed, and a withdrawal that signs in this tab. |
 | Sales | ✅ done | A red banner and a live countdown on the listing; start, extend and end on the manage screen. Not on catalog cards: the list route does not send `promotion`. |
+| Paid trials | ✅ done | Try a game by the minute. The real build, a corner meter, and every cent off the price if you buy. Config on the manage screen. |
 | "Why we built this" modal | ✅ done | Catalog hero. Where the censorship story lives, deliberately off the shopfront. |
 | Report flow | ✅ done | Modal with reasons, confirmation state. |
 | Real build in the player | ✅ done | Client-side unzip plus a service worker; see §3. |
@@ -187,7 +188,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Integrated against the live API. Money, GameKeys, builds, invites, payouts and withdrawals are all real. Three backend surfaces have no screen yet: sales, paid trials, and the rebuilt agent.
+**Stage:** Integrated against the live API. Money, GameKeys, builds, invites, payouts, withdrawals, sales and paid trials are all real and tested in a browser. **The agent is the only thing left**, and it is fully built on the server.
 
 > **The database is shared and a migration is a deploy.** Both sides point at one Neon database, so branching code does not branch the schema. Stage 18 dropped `wishlist_agents.target_game_id`, which broke the *other* checkout with no code change on that side. If the server throws `column … does not exist`, pull before debugging.
 **Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@privy-io/react-auth`, `@iconify-json/streamline-freehand` (dev)
@@ -195,6 +196,8 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 **Deployed:** no. Needs `VITE_PREVIEW_ORIGIN` (§3).
 
 **Working end to end, against the real backend:**
+- **Try before you buy:** a paid trial runs the real build by the minute, the next chunk is bought while the current one still runs, and every cent comes off the price when you buy from inside the session.
+- **Put it on sale:** a scheduled price that reverts itself, with a countdown on the listing that is checkable against the public topic.
 - **Buy:** browse → listing → buy → Privy sign-in → add funds → **pay, signed by your own wallet in this tab** → x402 settles on Hedera → the GameKey mints → the game boots in the same tab. Verified on testnet: $3.00 left the buyer, $1.71 came back as their split share, the key minted with serial 1.
 - **Publish:** make a studio (real ENS subname on Sepolia) → drop a zip → see it running → details, cover, price → splits, including someone who has only an email → publish. The build is pinned to IPFS and a real HTS token is created.
 - **Play:** the build is fetched from the API, unpacked in the browser and run on the isolated build origin. Same pipeline as the publish preview.
@@ -206,14 +209,14 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 `npm run lint` and `npm run build` are both clean.
 
-**Next up.** The backend ran ahead by four stages (16 to 20) while we did W7 and W11. Three whole surfaces are live server-side with no screen at all, and none of the three depend on each other. `../CGS-docs/INTEGRATION.md` §17 to §20 is the contract; §20 is Priyanshu's own suggestion for each, worth reading before disagreeing with it.
+**Next up.** Sales and trials are done, so **the agent is the whole remaining list.** It is fully built on the server (Stages 17 to 19), so this is a frontend-only job with nothing blocking it. `../CGS-docs/INTEGRATION.md` §18 is the contract and §20 is Priyanshu's own suggestion for the shape, worth reading before disagreeing with it.
 
 0. **Contract catch-up first, same as before W6.5.** Small, and two items are already silently wrong on screen:
    - `POST /api/agents` and `GET /api/agents/:id` are **gone, 404**. `src/mocks/agent.ts` and `AgentPanel` on the listing now point at nothing.
    - Three new notification types (`agent_purchased`, `agent_expired`, `agent_asked`) have no copy, so `adaptNotification` drops them. Safe, but invisible.
-   - `WireGame` needs `promotion`; the wishlist row needs `agentMaxUnits`, `agentNote`, `agent`.
+   - The wishlist row needs `agentMaxUnits`, `agentNote`, `agent`. (`WireGame.promotion` is done, from W12.)
 1. ~~**W12 sales.**~~ **Done, tested 2026-09-08.** See the log entry below. **One gap, and it is the server's:** `promotion` is on the game detail route only, so a catalog card shows the discounted price (which is the game's real price while a sale runs) but cannot say it is discounted.
-2. **W13 paid trials.** A second button beside Buy, and a HUD over the running game. The chunk purchase is `/pay/prepare` and `/pay/complete` pointed at a different pair of URLs, so `buyGame` is nearly the whole thing already. Buying the game afterwards needs no new call: `GET /download` subtracts the credit itself.
+2. ~~**W13 paid trials.**~~ **Done, tested 2026-09-08.** Two server changes were needed and are on `frontend-integration` in CGS-server. See the log entry below.
 3. **W9 the agent, rebuilt as 1:N.** One agent per person, one budget, many wants. Its own page, wants set from the game listing, a decisions feed, and the ask-first answer. The largest piece and the headline claim.
 4. Then likes and comments, which have API modules and no UI, then Impeccable per screen and swipe discovery if there is time.
 
@@ -312,6 +315,18 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 ### Log
 
 _Newest first._
+
+#### 2026-09-08 (W13 paid trials) — Suparno
+
+Try a game by the minute, and every cent comes off the price. **Two changes were needed in CGS-server**, both on `frontend-integration`, both written up in `../CGS-docs/PROGRESS-LOG.md`.
+
+- **A trial had no way to get the build.** A chunk creates a `sales` row and deliberately no `game_keys` row, so `hasEntitlement` is false and `build.zip` refused. It now also passes for an account holding trial chunks. That is not a weaker gate than it looks: the build is unpacked in the browser, so a trial was never technically enforceable, only honoured. One paid chunk earns the file; the clock is ours to keep.
+- **The purchase path would have thrown the credit away.** `/download` prices a purchase by subtracting the *authenticated* caller's credit, but `readChallenge` and `settle` fetch that route from the server to itself **with no Authorization header**. So the challenge quoted the full price and the credit sat unused. The buyer's own token is now carried on the intent and sent on both calls, which is what the route's own comment already assumed.
+- **The meter is where the deal is actually kept.** When the time runs out the frame is covered. Nothing on the server stops anyone, and pretending otherwise would be theatre.
+- **StrictMode was buying two chunks for one press, and the comment above it claimed otherwise.** `LightsDown` said the sequence "started exactly once" and had nothing enforcing it: React mounts, unmounts and mounts again in development, and `cancelled` only suppresses state updates — the `await` already in flight settles anyway. A purchase escaped it because a payment intent is single-use, but only by one `PAYMENT_INTENT_EXPIRED` retry. There is a `started` ref now, plus a `live` ref that a fake unmount re-arms so the one run that did start can still report progress. **Whether a payment happens twice must not depend on how React schedules effects.**
+- **A structural bug worth naming.** The trial session was first rendered inside the buy box. Buying the game mid-trial flips that box to its owned state, which unmounts the panel and takes the running game with it. Overlays that outlive a state change belong at route level, beside `CheckoutOverlay`.
+- **The next chunk is bought while the current one still has time**, and it extends from the old expiry rather than from now. Paying early should not cost you the minutes you already had.
+- `GameStage` gained a `hud` slot. `children` replaces the frame, which checkout needs; a meter has to sit *over* a running game, which is a different thing.
 
 #### 2026-09-08 (W12 sales) — Suparno
 

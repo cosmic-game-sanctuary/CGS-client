@@ -99,7 +99,6 @@ export function ProfileMenu() {
   // up disagreeing on the one screen that shows your own name back to you.
   const name = session.label ?? session.email
   const initial = (name ?? '?').charAt(0).toUpperCase()
-  const owned = session.ownedGameIds.length
 
   return (
     <div ref={wrapRef} className="relative">
@@ -197,7 +196,11 @@ export function ProfileMenu() {
           </div>
 
           <nav className="flex flex-col p-1.5">
-            <Item to="/library" label="My games" hint={owned ? `${owned}` : 'none yet'} onGo={() => setOpen(false)} />
+            {/* No count. `ownedGameIds` is this tab's optimism about what was
+                just bought, not the library, so it is empty after a reload and
+                told people with games that they had none. The real number
+                needs a fetch this menu has no reason to make. */}
+            <Item to="/library" label="My games" onGo={() => setOpen(false)} />
             {/* A public page, like a studio's, not a settings screen. It goes
                 here because this is where you look for anything about you,
                 and nowhere else in the app knows your handle. */}

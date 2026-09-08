@@ -45,6 +45,9 @@ export type ApiErrorCode =
   | 'PROMOTION_ACTIVE'
   /** One sale at a time. `details` carries the clashing `promotionId`. */
   | 'PROMOTION_EXISTS'
+  /** Trials: this game offers none, or the cap has already been reached. */
+  | 'TRIAL_NOT_ENABLED'
+  | 'TRIAL_CHUNKS_EXHAUSTED'
   /** A founder can't be removed, demoted, or leave. They transfer instead. */
   | 'IS_FOUNDER'
   /** A cloud save changed elsewhere since you read it. `details` has both sides. */

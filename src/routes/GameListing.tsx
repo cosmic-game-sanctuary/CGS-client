@@ -24,11 +24,14 @@ import { ReviewForm } from '@/components/listing/ReviewForm'
 import { ReviewList } from '@/components/listing/ReviewList'
 import { WishlistButton } from '@/components/listing/WishlistButton'
 import { SaleBanner } from '@/components/listing/SaleBanner'
+import { TrialPanel } from '@/components/listing/TrialPanel'
+import { TrialSession } from '@/components/play/TrialSession'
 import { DemandNote } from '@/components/listing/DemandNote'
 import { getGameWithState } from '@/api/games'
 import { getReviews } from '@/api/social'
 import { mediaFor } from '@/mocks/media'
-import { useSession } from '@/auth/session'
+import { grantKey, useSession } from '@/auth/session'
+import type { WireTrial } from '@/api/trials'
 import type { Game, Review } from '@/mocks/types'
 
 export function GameListing() {
@@ -37,6 +40,10 @@ export function GameListing() {
   const [checkoutOpen, setCheckoutOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const [playing, setPlaying] = useState(false)
+  // The trial session, held here rather than inside the buy box. Buying the
+  // game from inside a trial flips the box to its owned state, which would
+  // unmount the panel and take the running game down with it.
+  const [trying, setTrying] = useState<WireTrial | null>(null)
   const [posted, setPosted] = useState<Review[]>([])
   // Both results carry the id they were fetched for; anything stale reads as
   // loading during render rather than being cleared inside the effect.
@@ -298,6 +305,7 @@ export function GameListing() {
                   <p className="mt-3 font-body text-[13px] leading-relaxed text-ink-soft">
                     Starts in this tab. No install. All sales final.
                   </p>
+                  <TrialPanel gameId={game.id} onTry={setTrying} />
                   {/* Under the buy button, not beside it. Saving is what you
                       do instead of buying, so it reads as the second option
                       rather than a competing one. */}
@@ -385,6 +393,15 @@ export function GameListing() {
 
       {playing ? (
         <PlayOverlay game={game} onClose={() => setPlaying(false)} />
+      ) : null}
+
+      {trying ? (
+        <TrialSession
+          game={game}
+          trial={trying}
+          onClose={() => setTrying(null)}
+          onBought={() => grantKey(game.id)}
+        />
       ) : null}
 
       {reportOpen ? (
