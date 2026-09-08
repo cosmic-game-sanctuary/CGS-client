@@ -58,6 +58,7 @@ Smaller pieces:
 | Write-a-review flow | ✅ done | Ownership-gated, appears on the listing only if you hold the key. |
 | Your library | ✅ done | `/library`. Owned keys as ticket stubs, plus the triggers you're waiting on. |
 | Your money | ✅ done | `/money`. What you earned across every team, what is still owed, and a withdrawal that signs in this tab. |
+| Sales | ✅ done | A red banner and a live countdown on the listing; start, extend and end on the manage screen. Not on catalog cards: the list route does not send `promotion`. |
 | "Why we built this" modal | ✅ done | Catalog hero. Where the censorship story lives, deliberately off the shopfront. |
 | Report flow | ✅ done | Modal with reasons, confirmation state. |
 | Real build in the player | ✅ done | Client-side unzip plus a service worker; see §3. |
@@ -211,7 +212,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
    - `POST /api/agents` and `GET /api/agents/:id` are **gone, 404**. `src/mocks/agent.ts` and `AgentPanel` on the listing now point at nothing.
    - Three new notification types (`agent_purchased`, `agent_expired`, `agent_asked`) have no copy, so `adaptNotification` drops them. Safe, but invisible.
    - `WireGame` needs `promotion`; the wishlist row needs `agentMaxUnits`, `agentNote`, `agent`.
-1. **W12 sales.** Purely additive, no new screen. A running sale on the card and the listing with a countdown to `endsAt`, and a sale form on manage. `PATCH /api/games/:id` answers `409 PROMOTION_ACTIVE` while one runs, so the price field has to send you to the sale rather than fail.
+1. ~~**W12 sales.**~~ **Done, tested 2026-09-08.** See the log entry below. **One gap, and it is the server's:** `promotion` is on the game detail route only, so a catalog card shows the discounted price (which is the game's real price while a sale runs) but cannot say it is discounted.
 2. **W13 paid trials.** A second button beside Buy, and a HUD over the running game. The chunk purchase is `/pay/prepare` and `/pay/complete` pointed at a different pair of URLs, so `buyGame` is nearly the whole thing already. Buying the game afterwards needs no new call: `GET /download` subtracts the credit itself.
 3. **W9 the agent, rebuilt as 1:N.** One agent per person, one budget, many wants. Its own page, wants set from the game listing, a decisions feed, and the ask-first answer. The largest piece and the headline claim.
 4. Then likes and comments, which have API modules and no UI, then Impeccable per screen and swipe discovery if there is time.
@@ -235,8 +236,9 @@ src/mocks/                types.ts is the view model every component is written
                           against, and the reason this folder still exists.
                           games.ts survives for mediaFor; agent.ts is the last
                           real mock
-src/lib/                  cn(), format.ts for every ledger value, buildPreview.ts
-                          + previewHost.ts for running a real zip
+src/lib/                  cn(), format.ts for every ledger value, countdown.ts
+                          for a deadline that ticks, buildPreview.ts +
+                          previewHost.ts for running a real zip
 src/components/           CoverArt, GameCard, SplitBar, HeroCollage, GameStage,
                           Logo, ScrollManager, SiteHeader/Footer, ProfileMenu,
                           NotificationBell, checkout/, publish/, play/, listing/,
@@ -303,10 +305,26 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 | Withdrawal retry | None, unlike a purchase | An expired intent and a network refusal come back as the same error on the same field. One of them may have moved money, so retrying is the person's call. |
 | Held payouts | Stated, never claimable | They settle by themselves when the wallet first has a Hedera account. A claim button would be a button that does nothing. |
 | The invite link | Copyable from the roster | Email is the only channel that reaches somebody with no account, and an unverified domain can only mail our own address. An invite that bounces is a share nobody can claim. |
+| A sale on screen | The deadline, not the discount | Any store can print a lower number. Both ends of a sale are on a public topic before it matters, so the countdown is checkable. Same argument the split bar makes about money. |
+| Countdown tick rate | Per second under an hour, every 30s above it | A tab left open on a three-day sale would otherwise re-render a quarter of a million times to change nothing. |
+| Reading the clock | `useCountdown` in `lib/countdown.ts`, never `Date.now()` in render | `react-hooks/purity` refuses an impure call during render, correctly: the value would change on any re-render for any reason. |
 
 ### Log
 
 _Newest first._
+
+#### 2026-09-08 (W12 sales) — Suparno
+
+Additive, no new screen, and the smallest of the three surfaces Stages 16 to 20 left us.
+
+- **A sale is a scheduled price, and the client never computes one.** While a sale runs, the game's own `priceUnits` *is* the discounted number, so nothing applies a discount. `basePriceUnits` exists only so the old price can be struck through.
+- **The countdown is the feature, not the percentage.** Both ends of every sale are written to the public topic with `endsAt` in the message, before the sale matters to anyone, so the deadline is checkable rather than asserted.
+- **`Date.now()` cannot be called during render.** `react-hooks/purity` refuses it, and is right: the value changes on any re-render for any reason. Hence `lib/countdown.ts`, which reads the clock once in a lazy initialiser and then only from its own interval. It is a separate file because a module exporting a component *and* a plain function breaks fast refresh, the same rule that split `session.ts` from `SessionProvider.tsx`.
+- **The price field explains the refusal instead of reporting it.** `409 PROMOTION_ACTIVE` means the sale owns the price until it ends, so the answer is the panel below, not a retry.
+- **A bug found while building:** the panel refreshed off `game.priceUnits`, which works for a sale starting now and not at all for one scheduled for next week. That moves no price, so the panel kept offering to start the sale it had just scheduled. It has its own refresh counter now.
+- **Timing is asymmetric, and the copy says so.** Starting a sale with no `startsAt` is immediate, because `createPromotion` activates it in the same call. A *scheduled* start, and every natural end, wait for a 60-second sweep. So the countdown can sit at zero for up to a minute before the price actually moves.
+- **Checked rather than trusted:** INTEGRATION.md §17 claims a sale sends the same `price_drop` notifications a manual change does. It does. `startPromotion` calls `notifyPriceDrop` directly, and owners are excluded, which is the one message guaranteed to annoy.
+- **Left undone, and it is the server's half:** `promotion` is only on the detail route, so a catalog card shows the discounted price but cannot say it is discounted or show a clock. Raised in `../CGS-docs/PROGRESS-LOG.md`; not worth an N+1 workaround.
 
 #### 2026-09-08 (W7 invites, W11 money) — Suparno
 

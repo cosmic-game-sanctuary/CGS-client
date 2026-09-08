@@ -7,6 +7,7 @@ import { PriceChip } from '@/components/ui/PriceChip'
 import { EditListing } from '@/components/manage/EditListing'
 import { ShipBuild } from '@/components/manage/ShipBuild'
 import { PriceHistory } from '@/components/manage/PriceHistory'
+import { SalePanel } from '@/components/manage/SalePanel'
 import { MediaManager } from '@/components/manage/MediaManager'
 import {
   getManageView,
@@ -153,6 +154,10 @@ export function ManageGame() {
       ) : null}
 
       <EditListing view={current.view} onSaved={reload} />
+
+      {/* Directly under the price editor, because it is the other way to change
+          a price and the editor refuses while one runs. */}
+      <SalePanel view={current.view} onChanged={reload} />
 
       <MediaManager game={game} media={media} onChanged={reload} />
 

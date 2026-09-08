@@ -23,6 +23,7 @@ import { ReportDialog } from '@/components/listing/ReportDialog'
 import { ReviewForm } from '@/components/listing/ReviewForm'
 import { ReviewList } from '@/components/listing/ReviewList'
 import { WishlistButton } from '@/components/listing/WishlistButton'
+import { SaleBanner } from '@/components/listing/SaleBanner'
 import { DemandNote } from '@/components/listing/DemandNote'
 import { getGameWithState } from '@/api/games'
 import { getReviews } from '@/api/social'
@@ -252,6 +253,14 @@ export function GameListing() {
             <Rating rating={game.rating} count={game.reviewCount} />
 
             <div className="rounded-card border-2 border-ink bg-paper-sunk p-5 shadow-hard">
+              {/* Above the price, not beside it. The discount is the reason the
+                  number below is what it is, so it reads first. Suppressed once
+                  you own the game: what it costs today is somebody else's
+                  business by then. */}
+              {game.promotion && !owned ? (
+                <SaleBanner promotion={game.promotion} className="mb-4" />
+              ) : null}
+
               <div className="flex items-center justify-between gap-4">
                 <PriceChip usd={game.priceUsd} size="lg" />
                 <span className="label-micro text-ink-soft">

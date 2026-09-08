@@ -38,6 +38,13 @@ export type ApiErrorCode =
   | 'MODERATION_HOLD'
   | 'GAME_HAS_SALES'
   | 'GAME_IS_WATCHED'
+  /**
+   * A running sale owns the price, so a direct price edit is refused.
+   * `details` carries `promotionId` and `endsAt`.
+   */
+  | 'PROMOTION_ACTIVE'
+  /** One sale at a time. `details` carries the clashing `promotionId`. */
+  | 'PROMOTION_EXISTS'
   /** A founder can't be removed, demoted, or leave. They transfer instead. */
   | 'IS_FOUNDER'
   /** A cloud save changed elsewhere since you read it. `details` has both sides. */

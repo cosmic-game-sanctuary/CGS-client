@@ -6,6 +6,8 @@
  * integration phase these are only ever filled by `src/mocks/games.ts`.
  */
 
+import type { WirePromotion } from '@/api/promotions'
+
 export type StickerKind = 'new' | 'jam' | 'updated'
 
 /** A screenshot or clip on a listing. */
@@ -90,6 +92,17 @@ export interface Game {
   status?: 'draft' | 'published' | 'delisted' | 'removed'
   /** Bumped by every patch the developer ships. Your key covers all of them. */
   buildVersion?: number
+  /**
+   * The sale that produced this price, when one did.
+   *
+   * `priceUsd` above is **already** the discounted number, so nothing computes
+   * with this. It is here for the two things a price alone cannot say: what the
+   * game costs the rest of the time, and when the offer stops.
+   *
+   * Null on anything from the catalog list, which does not carry it, and on
+   * anything from a mock.
+   */
+  promotion?: WirePromotion | null
   /**
    * Entry URL of a build mounted in this browser session, which is the dev's
    * own zip on the publish screen before it exists anywhere else.

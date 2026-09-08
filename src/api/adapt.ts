@@ -81,6 +81,10 @@ export function adaptGame(wire: WireGame): Game {
     buildKb: wire.buildKb ?? 0,
     status: wire.status,
     buildVersion: wire.buildVersion,
+    // Null on a catalog row whether or not a sale is running, because the list
+    // route does not send it. `priceUsd` above is already the sale price
+    // either way, so a card is never wrong, only less specific.
+    promotion: wire.promotion ?? null,
   }
 }
 

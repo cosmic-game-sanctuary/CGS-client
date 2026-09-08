@@ -7,6 +7,8 @@
  * the only place that knows both. When the API changes, the diff is here.
  */
 
+import type { WirePromotion } from '@/api/promotions'
+
 export interface WireStudioRef {
   id: string
   name: string
@@ -94,6 +96,14 @@ export interface WireGame {
   delistedBy?: string | null
   /** Detail only. */
   media?: WireMedia[]
+  /**
+   * The sale this price came from, when it came from one.
+   *
+   * **Detail only.** The catalog list does not carry it, so a card can show the
+   * discounted price (it is the game's real price while a sale runs) but cannot
+   * say it is discounted. See `api/promotions.ts`.
+   */
+  promotion?: WirePromotion | null
   /** Detail only, and only when signed in. */
   owned?: boolean
   liked?: boolean

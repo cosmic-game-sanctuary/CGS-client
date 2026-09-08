@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { editGame, type WireManageView } from '@/api/manage'
-import { errorMessage } from '@/lib/api'
+import { ApiError, errorMessage } from '@/lib/api'
 import { formatPrice } from '@/lib/format'
 import { useSession } from '@/auth/session'
 
@@ -71,7 +71,15 @@ export function EditListing({
       if (priceUnits !== game.priceUnits) setAnnounced(result.announced ?? false)
       onSaved()
     } catch (error) {
-      setProblem(errorMessage(error))
+      // A running sale owns the price until it ends. Editing underneath it
+      // would be silently undone at `endsAt`, or would revert to a number
+      // nobody chose, so the server refuses. "Failed" is the wrong word for
+      // that: the answer is the sale panel below, not a retry.
+      setProblem(
+        error instanceof ApiError && error.code === 'PROMOTION_ACTIVE'
+          ? 'This game is on sale, and the sale owns the price until it ends. Change or end it below.'
+          : errorMessage(error),
+      )
     } finally {
       setSaving(false)
     }
