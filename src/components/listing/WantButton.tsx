@@ -43,17 +43,29 @@ export function WantButton({
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const [noAgent, setNoAgent] = useState(false)
+  const [underfunded, setUnderfunded] = useState<string | null>(null)
 
   if (!saved) return null
 
   const typed = Number(max)
   const valid = max.trim() !== '' && Number.isFinite(typed) && typed > 0
-  const tooHigh = valid && typed >= priceUsd
+  /**
+   * A ceiling at or above today's price is allowed, and used to be refused.
+   *
+   * The refusal assumed you were always setting a trigger on a game at full
+   * price. But a ceiling is a **maximum**, not an offer: saying "up to $1" on a
+   * game already at $1 means buy it, and the agent still pays whatever it
+   * actually costs. Blocking that made the whole point of the agent unreachable
+   * on a game that was already on sale, which is exactly when someone would
+   * reach for it.
+   */
+  const alreadyThere = valid && typed >= priceUsd
 
   async function save(clear = false) {
     setBusy(true)
     setProblem(null)
     setNoAgent(false)
+    setUnderfunded(null)
     try {
       await setWant(gameId, {
         agentMaxUnits: clear
@@ -67,6 +79,15 @@ export function WantButton({
       // The one refusal with somewhere to go rather than something to fix.
       if (error instanceof ApiError && error.code === 'NO_AGENT') {
         setNoAgent(true)
+      } else if (error instanceof ApiError && error.fieldErrors.agentMaxUnits) {
+        /**
+         * A ceiling the agent's wallet cannot cover, which is the refusal a
+         * person routinely hits: they set a want before funding it. It arrives
+         * as an ordinary validation failure, so the generic "that request
+         * doesn't look right" was swallowing both the number that explains it
+         * and the one action that fixes it.
+         */
+        setUnderfunded(sentence(error.fieldErrors.agentMaxUnits[0] ?? ''))
       } else {
         setProblem(errorMessage(error))
       }
@@ -135,9 +156,11 @@ export function WantButton({
         className="mt-2 w-full rounded-card border-2 border-ink bg-paper px-3 py-2 font-body text-[14px] outline-none placeholder:text-ink-faint focus:shadow-hard-sm"
       />
 
-      {tooHigh ? (
-        <p className="mt-1.5 font-mono text-[11px] text-red">
-          That is the price already. Pick something lower, or just buy it.
+      {alreadyThere ? (
+        <p className="mt-1.5 font-mono text-[11px] leading-relaxed text-ink-soft">
+          Already at or under that. Your agent will not buy it on the spot. It
+          decides an hour before the sale ends, weighing this against everything
+          else you want.
         </p>
       ) : null}
 
@@ -145,7 +168,7 @@ export function WantButton({
         <Button
           size="sm"
           variant="primary"
-          disabled={!valid || tooHigh || busy}
+          disabled={!valid || busy}
           onClick={() => void save()}
         >
           {busy ? 'Saving…' : 'Set it'}
@@ -154,6 +177,22 @@ export function WantButton({
           Cancel
         </Button>
       </div>
+
+      {underfunded ? (
+        <div className="mt-2.5 border-t-2 border-ink pt-2.5">
+          <p className="font-mono text-[11px] leading-relaxed text-ink-soft">
+            {underfunded}
+          </p>
+          <Button
+            size="sm"
+            variant="neutral"
+            className="mt-1.5"
+            onClick={() => navigate('/agent')}
+          >
+            Add money to it
+          </Button>
+        </div>
+      ) : null}
 
       {noAgent ? (
         <div className="mt-2.5 border-t-2 border-ink pt-2.5">
@@ -178,4 +217,9 @@ export function WantButton({
       ) : null}
     </div>
   )
+}
+
+/** Server field errors are lowercase fragments. On screen they are sentences. */
+function sentence(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }

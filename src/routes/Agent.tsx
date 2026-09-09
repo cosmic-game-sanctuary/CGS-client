@@ -95,6 +95,26 @@ export function Agent() {
 
   const reload = useCallback(() => setTick((n) => n + 1), [])
 
+  /**
+   * While a round is scheduled, this page has to find out on its own that it
+   * happened.
+   *
+   * The decision lands seconds after its wire, triggered by a sweep on the
+   * server, with nothing on screen to press and no navigation to hang a
+   * refetch off. Without this the countdown sits at zero and the page keeps
+   * showing "waiting" over a decision that was already made, which looks
+   * exactly like the agent being broken at the moment it is doing the one
+   * thing it exists to do. Stops by itself once nothing is outstanding.
+   */
+  const scheduled = decisions.some(
+    (d) => d.resolvedAt === null && (d.kind === 'held' || d.kind === 'asked'),
+  )
+  useEffect(() => {
+    if (!scheduled) return
+    const id = setInterval(() => setTick((n) => n + 1), 10_000)
+    return () => clearInterval(id)
+  }, [scheduled])
+
   const current = loaded?.userId === userId ? loaded : null
 
   async function close() {
@@ -134,9 +154,11 @@ export function Agent() {
 
       <main className="mx-auto w-full max-w-page flex-1 px-6 py-9">
         <h1 className="text-[clamp(30px,4.4vw,44px)]">My agent</h1>
-        <p className="mt-2 max-w-[54ch] font-body text-ink-soft">
-          It watches the prices of games you want and buys them when they drop
-          far enough. It spends its own wallet, and the key lands in yours.
+        <p className="mt-2 max-w-[58ch] font-body text-ink-soft">
+          It watches the prices of games you want. When one drops far enough it
+          does not buy straight away. It waits until the last hour of the sale,
+          then decides what your money is best spent on. It spends its own
+          wallet, and the key lands in yours.
         </p>
 
         {!session.signedIn ? (
@@ -221,9 +243,11 @@ function Running({
   const open = decisions.filter(
     (d) => d.kind === 'asked' && d.resolvedAt === null,
   )
-  // A hold that has not come due. It needs nothing from anyone, but it is the
-  // agent visibly choosing to wait rather than spend, which is the part worth
-  // seeing before the history of what it already did.
+  // The scheduled round it has not reached yet. It needs nothing from anyone,
+  // but it is the agent visibly choosing to wait rather than spend, and that is
+  // the part worth seeing before the history of what it already did. It is also
+  // the only place the deferral is legible at all: from the outside, an agent
+  // sitting on money looks identical to one that is broken.
   const waiting = decisions.filter(
     (d) => d.kind === 'held' && d.resolvedAt === null,
   )
@@ -325,10 +349,11 @@ function Running({
           {waiting.length > 0 ? (
             <div>
               <h2 className="text-2xl">It is waiting on purpose</h2>
-              <p className="mt-2 max-w-[56ch] font-body text-[15px] leading-relaxed text-ink-soft">
-                Buying now would use money it wants for something else on your
-                list. A sale is open until it ends, so it decides at the last
-                moment instead, when it can see more of what is on offer.
+              <p className="mt-2 max-w-[58ch] font-body text-[15px] leading-relaxed text-ink-soft">
+                A sale is open until it ends, so buying early gains nothing and
+                gives up the chance to compare. It decides shortly before the
+                soonest deadline, by which point it can see everything that
+                arrived while it waited.
               </p>
               <div className="mt-3">
                 <DecisionFeed

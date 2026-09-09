@@ -12,12 +12,15 @@ import { cn } from '@/lib/utils'
  *
  * The most important screen in the product, and the reason it is a page rather
  * than a status chip. Every other storefront's automation is a black box that
- * emails you a receipt. This says what was considered, what was chosen, and,
- * when the choice was genuinely contested, the model's own words for why.
+ * emails you a receipt. This says what was on the table and what was taken.
  *
- * `reasoning` is null on a deterministic buy and that is correct rather than
- * missing: one game, under its ceiling, affordable, nothing to deliberate. A
- * sentence manufactured for those rows would make the real ones worth less.
+ * **The model's own sentence is deliberately not shown here.** It is still
+ * written to `agent_decisions.reasoning` and to the round's log line, and it is
+ * genuinely useful there. On screen it was not: asked to justify a choice in
+ * one sentence, the model repeated the prompt's own internal marker back as if
+ * it were a game's name ("I chose the LAST CHANCE game"). The chips already say
+ * what happened, correctly, in less space. A sentence that is wrong about the
+ * thing the chips are right about costs more than it adds.
  */
 export function DecisionFeed({
   decisions,
@@ -34,8 +37,8 @@ export function DecisionFeed({
       <section>
         <h2 className="text-2xl">What it has done</h2>
         <p className="mt-3 rounded-card border-2 border-dashed border-ink-faint px-5 py-6 font-body text-[15px] leading-relaxed text-ink-soft">
-          Nothing yet. It only acts when a price it is watching actually moves,
-          so an empty list here means no game on your list has changed price.
+          Nothing yet. It decides in the last hour of a sale, so an empty list
+          here means no sale it is watching has got that close.
         </p>
       </section>
     )
@@ -69,12 +72,15 @@ const KIND: Record<
     said: (n) => (n === 1 ? 'Bought it.' : `Bought ${n} of them.`),
   },
   held: {
-    label: 'Waiting',
+    label: 'Deciding soon',
     tone: 'bg-yellow text-ink',
     // The deferral is the decision, not the absence of one. Spending now would
     // have cost something else on the list, and the sale is open until it
     // isn't, so waiting is free until the wire.
-    said: () => 'Holding the money rather than spending it on the first thing.',
+    said: (n) =>
+      n > 1
+        ? `Choosing between ${n} games. It has not spent anything yet.`
+        : 'Holding the money rather than spending it the moment it could.',
   },
   declined: {
     label: 'Passed',
@@ -112,14 +118,43 @@ function DecisionRow({
    * opposite of what happened.
    */
   const named = new Set(decision.chosenGameIds)
-  const took = decision.kind === 'bought'
   // Live only while nothing has resolved it. A question whose deadline passed
   // was answered by the deadline, which is an outcome and not a loose end.
   const open = decision.resolvedAt === null && decision.kind === 'asked'
-  // A hold that has not come due yet: the agent has decided to decide later,
-  // and the clock is the interesting part. Nothing to press — it resolves
-  // itself, which is the whole point of having handed it the budget.
+  // A scheduled round that has not come due yet: the agent has decided *when*
+  // to decide, and the clock is the interesting part. Nothing to press. It
+  // resolves itself, which is the whole point of having handed it the budget.
+  // A superseded schedule is deleted server-side rather than kept, so a live
+  // row is the only kind of `held` that normally exists.
   const waiting = decision.resolvedAt === null && decision.kind === 'held'
+
+  /**
+   * How one game's chip reads in this row.
+   *
+   * **Struck through means "this row went against this game"**, and which games
+   * those are is a different field depending on the kind of row. On a `bought`
+   * row it is everything it *didn't* take; on a `declined` row it is the games
+   * named, and everything else was handled by another row in the same round.
+   * Striking the un-named ones there too struck the game the agent had just
+   * bought, inside the row that exists to explain why the other one lost.
+   */
+  function chipTone(id: string): string {
+    const inRow = named.has(id)
+    const rejected = 'bg-paper-sunk text-ink-soft line-through'
+    // On the table this round, but not what this row is about.
+    const bystander = 'border-ink-faint bg-paper text-ink-soft'
+    switch (decision.kind) {
+      case 'bought':
+        return inRow ? 'bg-green text-paper' : rejected
+      case 'declined':
+        return inRow ? rejected : bystander
+      case 'asked':
+        return inRow ? 'bg-blue text-paper' : bystander
+      case 'held':
+        return waiting ? 'bg-yellow text-ink' : bystander
+    }
+    return bystander
+  }
 
   async function answer(action: 'buy' | 'skip' | 'remove' | 'keep') {
     setBusy(action)
@@ -175,15 +210,7 @@ function DecisionRow({
                     to={`/game/${game.slug}`}
                     className={cn(
                       'block rounded-chip border-2 border-ink px-2.5 py-0.5 font-mono text-[11px] no-underline',
-                      !named.has(id)
-                        ? // Considered in this round, and not what it acted on.
-                          'bg-paper-sunk text-ink-soft line-through'
-                        : took
-                          ? 'bg-green text-paper'
-                          : decision.kind === 'held'
-                            ? 'bg-yellow text-ink'
-                            : // Declined: named, and named to say no to.
-                              'bg-paper-sunk text-ink-soft line-through',
+                      chipTone(id),
                     )}
                   >
                     {game.title}
@@ -199,16 +226,10 @@ function DecisionRow({
         </ul>
       ) : null}
 
-      {decision.reasoning ? (
-        <p className="mt-3 border-l-2 border-ink-faint pl-3 font-body text-[14px] leading-relaxed text-ink-soft italic">
-          {decision.reasoning}
-        </p>
-      ) : null}
-
       {waiting ? (
         <p className="mt-3 border-t-2 border-ink pt-3 font-mono text-[11px] leading-relaxed text-ink-soft">
           {left
-            ? `Decides in ${left}, shortly before the sale ends. Nothing for you to do.`
+            ? `Decides in ${left}, shortly before the soonest of these sales ends. Nothing for you to do.`
             : 'Deciding now.'}
         </p>
       ) : null}

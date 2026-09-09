@@ -188,7 +188,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Integrated against the live API. Money, GameKeys, builds, invites, payouts, withdrawals, sales and paid trials are all real and tested in a browser. **The agent is built on both sides and partly tested** — see Next up for what is still unverified.
+**Stage:** Integrated against the live API. Money, GameKeys, builds, invites, payouts, withdrawals, sales and paid trials are all real and tested in a browser. **The agent now makes a real contested choice** — two games on sale, budget for one, deferred to the wire and decided there. Four smaller cases are still unrun; see Next up.
 
 > **The database is shared and a migration is a deploy.** Both sides point at one Neon database, so branching code does not branch the schema. Stage 18 dropped `wishlist_agents.target_game_id`, which broke the *other* checkout with no code change on that side. If the server throws `column … does not exist`, pull before debugging.
 **Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@privy-io/react-auth`, `@iconify-json/streamline-freehand` (dev)
@@ -217,7 +217,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
    - The wishlist row needs `agentMaxUnits`, `agentNote`, `agent`. (`WireGame.promotion` is done, from W12.)
 1. ~~**W12 sales.**~~ **Done, tested 2026-09-08.** See the log entry below. **One gap, and it is the server's:** `promotion` is on the game detail route only, so a catalog card shows the discounted price (which is the game's real price while a sale runs) but cannot say it is discounted.
 2. ~~**W13 paid trials.**~~ **Done, tested 2026-09-08.** Two server changes were needed and are on `frontend-integration` in CGS-server. See the log entry below.
-3. ~~**W9 the agent, rebuilt as 1:N.**~~ **Built, not fully tested.** Creating, funding, setting a want and an uncontested buy all work. **The deferral logic, the wind-down and the two decision-feed fixes are untested.** See the log entry below.
+3. ~~**W9 the agent, rebuilt as 1:N.**~~ **The headline case works.** Creating, funding, setting a want, the deferral and the contested round are all verified: two games on sale at once against a budget for one, and it waited, then chose. The decision rule was rewritten on 9 Sep after the first version turned out to make that round unreachable. **Still unrun: the second wire, the plain price cut, ask-first and the wind-down.** See both log entries below. Testing needs `GROQ_API_KEY` and the default hour in `AGENT_PURCHASE_BUFFER_MS`, where a 70-minute sale decides in 10.
 4. Then likes and comments, which have API modules and no UI, then Impeccable per screen and swipe discovery if there is time.
 
 **Untested:** cloud saves (no build we have writes to storage) and the failed-payout path (nothing has failed yet).
@@ -307,7 +307,9 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 | Where money out lives | `/money`, a third page behind the profile menu | Earnings are cross-studio, so no studio page can hold them, and they are not games you own, so the library can't. Withdrawal goes beside the number it acts on, not in a 264px dropdown. |
 | Withdrawal retry | None, unlike a purchase | An expired intent and a network refusal come back as the same error on the same field. One of them may have moved money, so retrying is the person's call. |
 | Held payouts | Stated, never claimable | They settle by themselves when the wallet first has a Hedera account. A claim button would be a button that does nothing. |
-| When the agent spends | At the last responsible moment, not the first chance | Two $1 games and $1.20: whichever went on sale first was bought, and the outcome was decided by which studio pressed a button. Money earmarked for another want is not spare, so a purchase that forecloses one is a decision, not a reflex. |
+| When the agent spends | At the wire, an hour before the soonest sale ends. Never on the price event | Two $1 games and $1.20: whichever went on sale first was bought, and the outcome was decided by which studio pressed a button. Waiting costs nothing while a sale is open, and what arrives during the wait is the whole decision. |
+| Where the waiting lives | In the schedule, not in the model's answer | A model that can say "hold for three hours" on a sale ending in one has been handed a way to lose the game. The schedule cannot express that. |
+| A scheduled round | An alarm clock that is deleted and re-run, never replayed | Everything the wait was for happened between setting it and firing it: another sale, another want, a smaller balance. Replaying the plan discards exactly that. |
 | Ending a sale early | Winds down to its last hour, never instantly | The buffer that lets an agent act on a deadline is the notice a studio has to give. Pulling a price instantly would make our own deferral cost a buyer the game. One constant, two uses. |
 | An immediate end | An operator script, not a button | A mistake is not a decision. `npm run sale:end` keeps the undo without making "renege on a published deadline" a normal thing to click. |
 | The invite link | Copyable from the roster | Email is the only channel that reaches somebody with no account, and an unverified domain can only mail our own address. An invite that bounces is a share nobody can claim. |
@@ -318,6 +320,28 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 ### Log
 
 _Newest first._
+
+#### 2026-09-09 (W9, the agent decides at the wire) — Suparno
+
+**The contested round is tested and correct.** Two games on sale at $1.00 against a $1.20 wallet: it waited through both sales starting, decided at the first wire, bought one and passed on the other. That is the scenario the whole feature exists for and it had never once happened before today. The other cases are still unrun.
+
+The behaviour built yesterday was wrong in a way testing would not have caught, because the screen it produced looked right.
+
+- **A sale starting was still a reason to spend.** Yesterday's fix made the agent *consider* whether a purchase forecloses another want, but a round only ever happened on a price event, so the first game to go on sale was the only thing eligible and the model was asked a question with one answer. Two games never go on sale in the same second. **The round is now scheduled, not triggered:** it happens when something reaches its wire, an hour before its sale ends, or when nothing eligible has a deadline at all. `roundIsDue`, `nextWire` and `atWire` in `decide.ts` are the whole scheduler.
+- **A `held` row is an alarm clock, not a stored decision.** When its `decideBy` arrives the row is deleted and the round is re-run against live prices, balance and ownership. Replaying the plan that scheduled it would throw away the only thing the wait was for. It is also why a superseded schedule is deleted rather than resolved: a schedule is not history, and a feed full of plans that changed buries the decisions that happened.
+- **The model's `hold` is gone.** It was a second waiting mechanism beside the schedule, disagreeing with it, and it could hold a game past the last moment it could still be bought. "Wait three hours" on a sale ending in one is a decision to lose the game, and no prompt wording reliably prevents that. The schedule cannot make that mistake.
+- **The prompt now turns on one fact per game: whether passing is reversible.** A game at its wire is marked `LAST CHANCE`; one whose own wire is hours away says how far. That asymmetry is the decision, and it was not previously in the prompt at all.
+- **An empty wallet was paying for verdicts.** `needsJudgement` tested "something was left over" before "can it afford anything", and the first is trivially true when the plan is empty.
+- **`PURCHASE_BUFFER_MS` is now `AGENT_PURCHASE_BUFFER_MS`, defaulting to the same hour.** Not a behaviour change, and the wind-down reads the same constant so the two stay in step. **It works the opposite way round to how it reads, and I documented it backwards first.** The decision lands at `endsAt - buffer`, so the wait is the sale's remaining length *minus* the buffer: lowering it makes the wait longer. What it buys is the ability to use a sale that is minutes long, since a sale shorter than the buffer is already past its wire when it starts. Buffer and sale length have to be set as a pair.
+- **`/agent` polls while a round is scheduled.** A decision lands seconds after its wire with nothing to press and no navigation to hang a refetch off, so the page sat on a countdown at zero over a decision already made. That looks exactly like the agent being broken at the moment it is doing the one thing it exists for.
+- **A ceiling at or above today's price was refused, and that was mine and wrong.** A ceiling is a maximum, not an offer: "up to $1" on a $1 game means buy it. The guard made the agent unreachable on a game already on sale, which is when someone reaches for it. The real refusal underneath, a ceiling the agent's wallet cannot cover, arrived as a bare "that request doesn't look right" and now says the balance in dollars with a way to fix it.
+- **Checked rather than assumed:** both `windDownPromotion` and `extendPromotion` already re-announce on the topic, so a schedule made against an old deadline self-corrects. Without that, a sale wound down from three days out to one hour would have left the agent asleep until long after it ended.
+
+**Found by running it, after the above worked:**
+
+- **The model's sentence is off the screen.** Asked to justify itself in one sentence, it wrote "I chose the LAST CHANCE game", repeating this prompt's own internal marker back as though it were a title. The chips already say what happened, correctly, in less space, and a sentence that is wrong about the thing the chips are right about costs more than it adds. Still written to `agent_decisions.reasoning` and to the round's log line, where it is genuinely useful, and the prompt now tells the model to name games by title.
+- **A `declined` row struck through every game, including the one it had just bought.** `chosenGameIds` holds the rejects on that kind of row and the winners on a `bought` row, so "everything not chosen" means opposite things on the two rows from the same round. Strike-through now means one thing only: **this row went against this game.** A game handled by a different row in the same round renders plain.
+- **The buffer's own arithmetic caught me out, in the docs rather than the code.** The decision lands at `endsAt - buffer`, so lowering `AGENT_PURCHASE_BUFFER_MS` makes the wait *longer*. I had written the opposite in four places and set the `.env` to `120000`, which turned a ten-minute test into a sixty-eight-minute one. Back on the default hour, where a 70-minute sale decides in 10.
 
 #### 2026-09-08 (W9 the agent) — Suparno
 

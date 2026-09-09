@@ -209,8 +209,8 @@ function WantRow({
         {!item.stillForSale
           ? 'This is not for sale any more. The agent will not buy it.'
           : gap <= 0
-            ? 'Already at or below your price. It should fire on the next price it sees.'
-            : `Fires when it drops ${formatAmount(gap)}.`}
+            ? 'Already at or under your price. It weighs this against everything else you want before it spends.'
+            : `In the running once it drops ${formatAmount(gap)}.`}
         {reachable ? '' : ' Your agent does not hold enough to cover this.'}
       </p>
 
