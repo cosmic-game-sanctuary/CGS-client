@@ -145,10 +145,12 @@ export async function mountBuildFromPath(
   buildPath: string,
   onProgress?: (fraction: number) => void,
 ): Promise<string> {
+  console.info('[cgs mount] 1/4 requesting build bytes from', buildPath)
   const zip = await requestBytes(buildPath, {
     // Downloading is most of the wait, so it gets most of the bar.
     onProgress: onProgress && ((loaded, total) => onProgress((loaded / total) * 0.75)),
   })
+  console.info('[cgs mount] 2/4 have', zip.byteLength, 'bytes, unpacking')
 
   /**
    * The unpack is **not** instant, and pretending it was is what made a
@@ -163,8 +165,10 @@ export async function mountBuildFromPath(
    * the two were impossible to tell apart from the outside.
    */
   const mounted = await mountBuild(zip, (stage) => {
+    console.info('[cgs mount] 3/4 stage:', stage)
     onProgress?.(MOUNT_PROGRESS[stage])
   })
+  console.info('[cgs mount] 4/4 done, entry =', mounted.entry)
   onProgress?.(1)
   return mounted.entry
 }

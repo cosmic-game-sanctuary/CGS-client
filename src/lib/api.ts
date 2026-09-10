@@ -250,11 +250,13 @@ export async function requestBytes(
     // millisecond, but if Privy is mid-refresh it can sit, and a build
     // download that never even starts its fetch is one of the ways the play
     // overlay hung with no error.
+    console.info('[cgs bytes] getting auth token')
     const token = await withTimeout(
       getToken(),
       10_000,
       'Signing in took too long. Reload and try again.',
     )
+    console.info('[cgs bytes] token', token ? 'ok' : 'none', '- fetching', path)
     if (token) headers.Authorization = `Bearer ${token}`
   }
 
