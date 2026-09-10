@@ -6,6 +6,7 @@ import { respondToDecision, type WireDecision } from '@/api/agent'
 import { ApiError, errorMessage } from '@/lib/api'
 import { formatAmount, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
+import { hashscanTx } from '@/lib/hashscan'
 
 /**
  * What the agent did, and what it was thinking.
@@ -257,10 +258,26 @@ function DecisionRow({
 
       {/* Money spent on thinking rather than on games, kept separate because
           it is the one cost that buys nothing you can play. */}
+      {/* The one line on this page that proves rather than asserts. An agent
+          buying a game is ordinary; an agent paying, per question, for the
+          reasoning it used to decide is not, and it is checkable by anyone. */}
       {decision.inferenceCostUnits ? (
         <p className="mt-2.5 font-mono text-[10px] text-ink-faint">
           Thinking cost {formatAmount(decision.inferenceCostUnits / 10 ** 6)},
           paid over x402 like everything else.
+          {decision.inferenceTxId ? (
+            <>
+              {' '}
+              <a
+                href={hashscanTx(decision.inferenceTxId)}
+                target="_blank"
+                rel="noreferrer"
+                className="text-ink underline"
+              >
+                See the payment
+              </a>
+            </>
+          ) : null}
         </p>
       ) : null}
 

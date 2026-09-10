@@ -113,6 +113,14 @@ export interface WireDecision {
   chosenGameIds: string[]
   reasoning: string | null
   inferenceCostUnits: number | null
+  /**
+   * The Hedera transaction that paid for that inference.
+   *
+   * The point of showing it is that "the agent pays for its own reasoning" is
+   * a claim until someone can open the transfer on a public explorer. Null
+   * wherever `inferenceCostUnits` is, and on rows written before this existed.
+   */
+  inferenceTxId: string | null
   /** When a hold or a question stops waiting. Null on a settled row. */
   decideBy: string | null
   /** Null while a `held` or `asked` row is still live. */
