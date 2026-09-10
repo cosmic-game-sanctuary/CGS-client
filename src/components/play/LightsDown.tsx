@@ -108,32 +108,62 @@ export function LightsDown({
     started.current = true
     const sequence = beatsRef.current
 
+    // `live` gates *rendering* — a setState after a real unmount is pointless —
+    // but it must NOT be allowed to abandon the sequence itself. It used to:
+    // `if (!live.current) return` at the top of the loop, plus an error branch
+    // that only surfaced `setFailure` while live, meant any transient flip
+    // (a StrictMode remount, a parent re-render) between two beats left the
+    // sequence dead with the overlay frozen on the last label and no error.
+    // The work — a real payment — has to finish or fail out loud regardless of
+    // what React did to this component in the meantime.
+    const set = <T,>(fn: (v: T) => void, v: T) => {
+      if (live.current) fn(v)
+    }
+
+    // A beat whose work neither resolves nor rejects is the failure mode this
+    // whole screen exists to make impossible. Two minutes is past the slowest
+    // honest beat (a build download) and well short of "the user gave up".
+    const BEAT_CEILING_MS = 120_000
+
     async function run() {
       for (let i = 0; i < sequence.length; i++) {
-        if (!live.current) return
         const beat = sequence[i]
-        setIndex(i)
-        setProgress(0)
+        set(setIndex, i)
+        set(setProgress, 0)
         beat.at?.()
 
-        // The floor and the work run together, so a beat lasts the longer of
-        // the two. Without the floor a cached answer would flash three labels
-        // in one frame; without the work the sequence would outrun the payment.
         try {
           await Promise.all([
             new Promise((resolve) => {
               timers.current.push(window.setTimeout(resolve, beat.ms))
             }),
-            beat.work?.((fraction) => {
-              if (live.current) setProgress(fraction)
-            }),
+            Promise.race([
+              Promise.resolve(
+                beat.work?.((fraction) => set(setProgress, fraction)),
+              ),
+              new Promise((_, reject) => {
+                timers.current.push(
+                  window.setTimeout(
+                    () =>
+                      reject(
+                        new Error(
+                          `"${beat.label}" did not finish. If money was taken, ` +
+                            'check your wallet before trying again.',
+                        ),
+                      ),
+                    BEAT_CEILING_MS,
+                  ),
+                )
+              }),
+            ]),
           ])
         } catch (error) {
-          if (live.current) setFailure(errorMessage(error))
+          console.error('[cgs lights] beat failed:', sequence[i]?.label, error)
+          setFailure(errorMessage(error))
           return
         }
       }
-      if (live.current) setIndex(sequence.length)
+      set(setIndex, sequence.length)
     }
 
     void run()
