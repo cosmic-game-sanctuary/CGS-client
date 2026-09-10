@@ -176,7 +176,6 @@ function connect(origin: string): Promise<PreviewLink> {
     let settled = false
 
     const timer = window.setTimeout(() => {
-      console.warn('[cgs host] no ready from', origin, 'after', CONNECT_TIMEOUT_MS, 'ms')
       finish(new BuildError(`No answer from the build host at ${origin}.`))
     }, CONNECT_TIMEOUT_MS)
 
@@ -244,7 +243,6 @@ function connect(origin: string): Promise<PreviewLink> {
 
       switch (data.kind) {
         case 'ready':
-          console.info('[cgs host]', origin, 'is ready')
           finish()
           return
         case 'blocked':
@@ -283,20 +281,14 @@ let link: Promise<PreviewLink> | null = null
  */
 export function previewHost(): Promise<PreviewLink> {
   link ??= (async () => {
-    console.info('[cgs host] sweeping app service workers')
     await dropAppServiceWorkers()
 
     const configured = import.meta.env.VITE_PREVIEW_ORIGIN?.trim()
     if (configured) return connect(configured.replace(/\/+$/, ''))
 
-    console.info('[cgs host] probing twins:', localTwins())
     for (const candidate of localTwins()) {
-      if (!(await reachable(candidate))) {
-        console.info('[cgs host]', candidate, 'not reachable, skipping')
-        continue
-      }
+      if (!(await reachable(candidate))) continue
       try {
-        console.info('[cgs host] connecting to', candidate)
         return await connect(candidate)
       } catch (error) {
         console.warn(`[cgs] build host at ${candidate} did not start.`, error)
@@ -307,7 +299,6 @@ export function previewHost(): Promise<PreviewLink> {
       '[cgs] no separate build origin, so builds run on this one. Fine on a ' +
         'laptop. Not fine in production: set VITE_PREVIEW_ORIGIN.',
     )
-    console.warn('[cgs host] falling back to app origin', window.location.origin)
     return connect(window.location.origin)
   })()
   return link
