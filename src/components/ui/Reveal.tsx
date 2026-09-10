@@ -41,7 +41,17 @@ export function Reveal({
           }
         }
       },
-      { threshold: 0.15, rootMargin: '0px 0px -40px 0px' },
+      /**
+       * **`threshold` must stay 0.** It is a *fraction of this element*, not
+       * of the viewport, so on anything taller than the window the ratio can
+       * never reach a percentage — a grid 6.7x the viewport height tops out
+       * at 0.15 and one taller than that can never satisfy it at any scroll
+       * position. The catalog crossed exactly that line at ~44 games and every
+       * card stayed at `opacity: 0`: laid out, clickable, invisible. A reveal
+       * is "has this scrolled into view", which is threshold 0 by definition;
+       * the rootMargin is what holds it back until it is properly in frame.
+       */
+      { threshold: 0, rootMargin: '0px 0px -40px 0px' },
     )
 
     observer.observe(node)

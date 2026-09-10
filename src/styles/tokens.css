@@ -211,7 +211,11 @@
   [data-reveal][data-shown="true"] > * {
     opacity: 1;
     animation: stamp 0.5s var(--ease-land) backwards;
-    animation-delay: calc(var(--i, 0) * 70ms);
+    /* Capped, because the stagger is per-item and the catalog is not a fixed
+       length. Uncapped, 44 cards put the last one 3s behind the first and a
+       full page read as half-empty while it caught up. Twelve steps is enough
+       to read as a deal being dealt; past that it is just waiting. */
+    animation-delay: calc(min(var(--i, 0), 12) * 70ms);
   }
 
   @media (prefers-reduced-motion: reduce) {
