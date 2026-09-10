@@ -157,20 +157,45 @@ export async function request<T>(
   if (body !== undefined) headers['Content-Type'] = 'application/json'
 
   let response: Response
+  // A ceiling on any single call. The payment steps are the reason: a
+  // `/pay/complete` or a `/trial/chunks/complete` that never comes back left
+  // the checkout sat on its overlay with the money already gone and no error,
+  // because nothing anywhere in the chain ever gave up. A request that has
+  // genuinely stalled has to become an error a person can see and retry.
+  // 90s clears the slowest honest case (settlement plus a background split
+  // run behind it) with room to spare.
+  const REQUEST_TIMEOUT_MS = 90_000
+  const timeout = new AbortController()
+  const bell = setTimeout(() => timeout.abort(), REQUEST_TIMEOUT_MS)
+  // Honour a caller's own signal too — abort if either fires.
+  const onCallerAbort = () => timeout.abort()
+  signal?.addEventListener('abort', onCallerAbort)
+
   try {
     response = await fetch(buildUrl(path, query), {
       method,
       headers,
       body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
-      signal,
+      signal: timeout.signal,
     })
   } catch (cause) {
     if (signal?.aborted) throw cause
+    if (timeout.signal.aborted) {
+      throw new ApiError(
+        0,
+        'NETWORK',
+        'The server took too long to answer. If this was a payment, check your ' +
+          'wallet before trying again — nothing may have been charged, but do not assume.',
+      )
+    }
     throw new ApiError(
       0,
       'NETWORK',
       'Could not reach the server. Is it running?',
     )
+  } finally {
+    clearTimeout(bell)
+    signal?.removeEventListener('abort', onCallerAbort)
   }
 
   if (response.status === 204) return undefined as T
