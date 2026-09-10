@@ -127,6 +127,23 @@ export interface PreviewLink {
 /** A host that never answers is a host that isn't there. */
 const CONNECT_TIMEOUT_MS = 8000
 
+/**
+ * How long one command may take before it is treated as lost.
+ *
+ * Generous on purpose: a `put` writes every file of an unpacked build into the
+ * Cache API, and a real Godot build is hundreds of files and hundreds of
+ * megabytes. This is not a deadline for a slow machine, it is a backstop for a
+ * host that is never going to answer at all.
+ *
+ * It exists because `send` had no timeout, and every way that could go wrong
+ * went wrong the same way: the promise simply never settled. A play or a paid
+ * trial then sat on its overlay forever with no error, no failure screen and
+ * nothing in the console. The money had already moved. **A payment path must
+ * never be able to wait forever** — an error a person can read and retry is
+ * strictly better than a spinner that means nothing.
+ */
+const COMMAND_TIMEOUT_MS = 90_000
+
 // Messages the worker sends about missing files, relayed up by the host.
 const swListeners = new Set<(data: Record<string, unknown>) => void>()
 
@@ -178,9 +195,39 @@ function connect(origin: string): Promise<PreviewLink> {
         send(command, transfer = []) {
           return new Promise<HostResult>((ok, fail) => {
             ticket += 1
-            pending.set(ticket, { ok, fail })
-            frame.contentWindow?.postMessage(
-              { ...command, source: 'cgs-preview-app', ticket },
+            const mine = ticket
+
+            // The frame is gone, so nothing will ever answer this. Without
+            // the check, optional chaining turns "there is no host" into a
+            // silent no-op and the promise below is orphaned on the spot.
+            const target = frame.contentWindow
+            if (!target) {
+              fail(new BuildError('The build host went away before it could answer.'))
+              return
+            }
+
+            const lost = window.setTimeout(() => {
+              if (!pending.delete(mine)) return
+              fail(
+                new BuildError(
+                  `The build host stopped responding while it was working (${command.op}).`,
+                ),
+              )
+            }, COMMAND_TIMEOUT_MS)
+
+            pending.set(mine, {
+              ok: (result) => {
+                window.clearTimeout(lost)
+                ok(result)
+              },
+              fail: (error) => {
+                window.clearTimeout(lost)
+                fail(error)
+              },
+            })
+
+            target.postMessage(
+              { ...command, source: 'cgs-preview-app', ticket: mine },
               origin,
               transfer,
             )

@@ -1,5 +1,5 @@
 import { ApiError, request, requestBytes } from '@/lib/api'
-import { mountBuild } from '@/lib/buildPreview'
+import { mountBuild, type MountStage } from '@/lib/buildPreview'
 
 /**
  * Buying a game, and getting at the build afterwards.
@@ -146,13 +146,36 @@ export async function mountBuildFromPath(
   onProgress?: (fraction: number) => void,
 ): Promise<string> {
   const zip = await requestBytes(buildPath, {
-    // Downloading is most of the wait, so it gets most of the bar. The unpack
-    // that follows is fast and has no measurable progress of its own.
-    onProgress: onProgress && ((loaded, total) => onProgress((loaded / total) * 0.9)),
+    // Downloading is most of the wait, so it gets most of the bar.
+    onProgress: onProgress && ((loaded, total) => onProgress((loaded / total) * 0.75)),
   })
-  const mounted = await mountBuild(zip)
+
+  /**
+   * The unpack is **not** instant, and pretending it was is what made a
+   * working mount indistinguishable from a broken one.
+   *
+   * A real build is ~23MB compressed and several hundred megabytes of files
+   * once inflated, every one of which is written into the Cache API on the
+   * other origin. That is tens of seconds of genuine work on a slow machine.
+   * With nothing reported for any of it, the bar parked at the end of the
+   * download and stayed there, which reads as a hang. It looked exactly like
+   * the real hang it sat next to (see previewHost's COMMAND_TIMEOUT_MS), so
+   * the two were impossible to tell apart from the outside.
+   */
+  const mounted = await mountBuild(zip, (stage) => {
+    onProgress?.(MOUNT_PROGRESS[stage])
+  })
   onProgress?.(1)
   return mounted.entry
+}
+
+/** Where each stage of the unpack sits on the bar, after the download's 0.75. */
+const MOUNT_PROGRESS: Record<MountStage, number> = {
+  worker: 0.78,
+  reading: 0.82,
+  unzipping: 0.86,
+  writing: 0.92,
+  starting: 0.98,
 }
 
 /** Where a game's build lives. The route decides who may have it. */
