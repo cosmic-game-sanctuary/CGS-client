@@ -49,6 +49,16 @@ export function LightsDown({
   const [leaving, setLeaving] = useState(false)
   const timers = useRef<number[]>([])
 
+  // Only the exit animation's timer lives here, and only so leaving the screen
+  // mid-wipe doesn't fire `onExit` at a component that has gone.
+  //
+  // **Nothing the sequence waits on may be registered here.** It used to be, and
+  // that was the trial hang: a beat's floor timer went into this list, React's
+  // StrictMode remount ran this cleanup between mount and remount, the floor
+  // timer was cleared while its promise was still being awaited, and the promise
+  // simply never settled. The payment underneath succeeded; the overlay sat on
+  // "Buying 1 minutes" forever. Checkout escaped it only because it starts
+  // inactive and so begins its run after that window has passed.
   useEffect(() => {
     const pending = timers.current
     return () => {
@@ -125,6 +135,10 @@ export function LightsDown({
     // honest beat (a build download) and well short of "the user gave up".
     const BEAT_CEILING_MS = 120_000
 
+    /** The floor a beat shows for. Owned by the run, cancellable by nothing. */
+    const floor = (ms: number) =>
+      new Promise<void>((resolve) => window.setTimeout(resolve, ms))
+
     async function run() {
       for (let i = 0; i < sequence.length; i++) {
         const beat = sequence[i]
@@ -132,35 +146,36 @@ export function LightsDown({
         set(setProgress, 0)
         beat.at?.()
 
+        // Cleared as soon as the beat is done, so a finished sequence isn't
+        // trailing a two-minute timer per step.
+        let ceiling: number | undefined
+
         try {
           await Promise.all([
-            new Promise((resolve) => {
-              timers.current.push(window.setTimeout(resolve, beat.ms))
-            }),
+            floor(beat.ms),
             Promise.race([
               Promise.resolve(
                 beat.work?.((fraction) => set(setProgress, fraction)),
               ),
               new Promise((_, reject) => {
-                timers.current.push(
-                  window.setTimeout(
-                    () =>
-                      reject(
-                        new Error(
-                          `"${beat.label}" did not finish. If money was taken, ` +
-                            'check your wallet before trying again.',
-                        ),
+                ceiling = window.setTimeout(
+                  () =>
+                    reject(
+                      new Error(
+                        `"${beat.label}" did not finish. If money was taken, ` +
+                          'check your wallet before trying again.',
                       ),
-                    BEAT_CEILING_MS,
-                  ),
+                    ),
+                  BEAT_CEILING_MS,
                 )
               }),
             ]),
           ])
         } catch (error) {
-          console.error('[cgs lights] beat failed:', sequence[i]?.label, error)
           setFailure(errorMessage(error))
           return
+        } finally {
+          if (ceiling !== undefined) window.clearTimeout(ceiling)
         }
       }
       set(setIndex, sequence.length)
