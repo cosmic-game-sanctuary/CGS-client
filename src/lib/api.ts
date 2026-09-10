@@ -122,6 +122,20 @@ export function setTokenSource(source: () => Promise<string | null>) {
   getToken = source
 }
 
+/**
+ * Reject a promise that has not settled in time, with a readable message.
+ * Used to put a ceiling on the two awaits that can silently stall a payment
+ * or a build download: a hung `getAccessToken`, and a `fetch` with no answer.
+ */
+export function withTimeout<T>(p: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<T>((_, reject) =>
+      setTimeout(() => reject(new ApiError(0, 'NETWORK', message)), ms),
+    ),
+  ])
+}
+
 type RequestOptions = {
   method?: string
   /** Serialised as JSON. Use `form` for multipart instead. */
@@ -232,16 +246,36 @@ export async function requestBytes(
 
   const headers: Record<string, string> = {}
   if (!anonymous) {
-    const token = await getToken()
+    // Bounded. `getAccessToken` normally returns a cached token in a
+    // millisecond, but if Privy is mid-refresh it can sit, and a build
+    // download that never even starts its fetch is one of the ways the play
+    // overlay hung with no error.
+    const token = await withTimeout(
+      getToken(),
+      10_000,
+      'Signing in took too long. Reload and try again.',
+    )
     if (token) headers.Authorization = `Bearer ${token}`
   }
 
+  // 3 minutes: a real build is ~23MB and this includes the whole download.
+  const cap = new AbortController()
+  const bell = setTimeout(() => cap.abort(), 180_000)
+  const onCallerAbort = () => cap.abort()
+  signal?.addEventListener('abort', onCallerAbort)
+
   let response: Response
   try {
-    response = await fetch(buildUrl(path, query), { headers, signal })
+    response = await fetch(buildUrl(path, query), { headers, signal: cap.signal })
   } catch (cause) {
     if (signal?.aborted) throw cause
+    if (cap.signal.aborted) {
+      throw new ApiError(0, 'NETWORK', 'The build took too long to download. Reload and try again.')
+    }
     throw new ApiError(0, 'NETWORK', 'Could not reach the server. Is it running?')
+  } finally {
+    clearTimeout(bell)
+    signal?.removeEventListener('abort', onCallerAbort)
   }
 
   if (!response.ok) {

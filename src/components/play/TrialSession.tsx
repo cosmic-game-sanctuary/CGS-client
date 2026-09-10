@@ -74,15 +74,20 @@ export function TrialSession({
         label: `Buying ${trial.chunkMinutes} minutes`,
         ms: 750,
         work: async () => {
+          console.info('[cgs trial] beat 1: buying a chunk')
           const bought = await buyChunk(game.id, signer.signHashes)
           held.minutes = bought.chunkMinutes || trial.chunkMinutes
+          console.info('[cgs trial] beat 1 done, minutes =', held.minutes)
         },
       },
       {
         label: 'Unpacking the build',
         ms: 400,
         work: async (report) => {
-          setPlayUrl(await mountBuildFromPath(buildPathFor(game.id), report))
+          console.info('[cgs trial] beat 2: fetching + mounting the build')
+          const url = await mountBuildFromPath(buildPathFor(game.id), report)
+          console.info('[cgs trial] beat 2: mounted at', url)
+          setPlayUrl(url)
           // Started when the build is actually in hand, not when the payment
           // settled: the minutes were sold as play, and a slow download is
           // ours to absorb rather than theirs to pay for.
