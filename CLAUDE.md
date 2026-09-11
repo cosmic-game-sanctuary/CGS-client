@@ -376,6 +376,19 @@ frontend-only summary.
   session, so a landed fix could still look broken depending on which one
   served a given request. See the new row in `CGS-server/CLAUDE.md`'s
   gotchas table.
+#### 2026-09-11 (pulled all three, kept two of three fixes) — Suparno
+
+**The x402 stall was `tsx watch`, and I chased the wrong thing.** Publishing writes the build zip into `storage/builds/`, inside the watched tree, so the dev server restarted and dropped the in-memory payment-intent map. Anything mid-payment at that instant died with a bare `PAYMENT_INTENT_EXPIRED`. That is every symptom I had: the publish that failed, the restart that "fixed" it, and the trial stuck on "Buying 1 minutes". Priyanshu found it and fixed it in `7ec31e2`. I had blamed the agent sweep exhausting the connection pool, which is a real defect and was not this one. **The lesson worth keeping: before theorising about a hang, check whether the process is still the same process.**
+
+Of the three server fixes I had uncommitted, one was superseded and two were kept.
+
+- **Dropped:** my timeout on `settle()`. Priyanshu's `fe98c1c` does it at 100s and its message tells the buyer to check the Mirror Node before retrying, which is the part that matters when money may already have moved.
+- **Kept, and measured:** the pool. `pg` closes an idle client after 10 seconds by default, and against Neon a fresh connection costs **3528ms** against **281ms** warm. A browser idle for ten seconds is the normal case, so nearly every request paid that handshake again. `idleTimeoutMillis: 0`, `keepAlive: true`, `max: 20`, plus a `pool.on("error")` handler that stops becoming optional the moment connections are held for hours.
+- **Kept, as hygiene:** `connectionTimeoutMillis: 15_000` so pool exhaustion errors instead of hanging, and an overlap guard on both timers in `index.ts`. `setInterval` does not wait for an async callback, and W9 turned the sweep from three cheap queries into something that can run a whole round.
+
+**Priyanshu reviewed W9 and kept it**, including dropping the model's `hold`. He took the stale-claim fix himself: an agent stranded in `buying` by a killed process was never evaluated again, which W9 made expensive rather than caused. New column `claimedAt`, migration `0021`, reclaimed after `AGENT_STALE_CLAIM_MS`.
+
+**One contract line worth remembering:** a want sitting unbought during a live sale is now normal, not a stall. Nothing on this side treats it as an error, which is worth re-checking if that copy is ever rewritten.
 
 #### 2026-09-09 (W9, the agent decides at the wire) — Suparno
 
