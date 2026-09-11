@@ -29,6 +29,7 @@ import { TrialSession } from '@/components/play/TrialSession'
 import { DemandNote } from '@/components/listing/DemandNote'
 import { getGameWithState } from '@/api/games'
 import { getReviews } from '@/api/social'
+import { getTrial } from '@/api/trials'
 import { mediaFor } from '@/mocks/media'
 import { grantKey, useSession } from '@/auth/session'
 import type { WireTrial } from '@/api/trials'
@@ -44,6 +45,16 @@ export function GameListing() {
   // game from inside a trial flips the box to its owned state, which would
   // unmount the panel and take the running game down with it.
   const [trying, setTrying] = useState<WireTrial | null>(null)
+  // The trial status for this game and this viewer. Fetched here rather than
+  // inside TrialPanel, because the buy box and the checkout overlay both need
+  // the credit-adjusted price too: without it the button and the funding step
+  // went on quoting the full price after a trial had already paid some of it
+  // down. Carries the id it was fetched for, like the other loaded-state here,
+  // so a stale one from the previous game is never read.
+  const [loadedTrial, setLoadedTrial] = useState<{
+    gameId: string
+    trial: WireTrial
+  } | null>(null)
   // Bumped when a want changes, so the listing re-reads its own state.
   const [reloadTick, setReloadTick] = useState(0)
   const [posted, setPosted] = useState<Review[]>([])
@@ -106,6 +117,23 @@ export function GameListing() {
     // signing in has to re-ask rather than leave the buy box stale.
   }, [slug, session.signedIn, reloadTick])
 
+  // Trial status, on its own so a slow or missing trial never holds up the
+  // listing. Keyed on the same things as the main load plus `trying`, so
+  // closing a session refetches the credit it just earned. `getTrial` answers
+  // with everything zeroed (and `owedUnits` = the full price) for a game with
+  // no trial, so nothing here has to special-case that.
+  const loadedGameId = loaded?.slug === slug ? loaded.game?.id : undefined
+  useEffect(() => {
+    if (!loadedGameId) return
+    const controller = new AbortController()
+    getTrial(loadedGameId, controller.signal)
+      .then((t) => setLoadedTrial({ gameId: loadedGameId, trial: t }))
+      .catch(() => {
+        // A stale trial number is not worth a broken listing.
+      })
+    return () => controller.abort()
+  }, [loadedGameId, session.signedIn, reloadTick, trying])
+
   // null = still loading, undefined game = no such game
   const current = loaded?.slug === slug ? loaded : null
 
@@ -123,6 +151,18 @@ export function GameListing() {
   const owned = current.owned || session.ownedGameIds.includes(game.id)
 
   const saved = savedState?.gameId === game.id ? savedState : current
+
+  // This viewer's trial standing for this game, or null while it loads / when
+  // there is no trial. `owedUsd` is what buying costs them right now with any
+  // trial credit already off — the server's own figure, the same one it will
+  // charge. Everything that shows a purchase price reads this, falling back to
+  // the list price, so the button and the checkout never quote a number the
+  // buyer will not actually be charged.
+  const trial =
+    loadedTrial?.gameId === game.id ? loadedTrial.trial : null
+  const hasTrialCredit = (trial?.creditUnits ?? 0) > 0
+  const owedUnits = hasTrialCredit ? trial!.owedUnits : game.priceUnits
+  const owedUsd = hasTrialCredit ? trial!.owedUsd : game.priceUsd
 
   // A manager of this game's studio, which is what the server gates replying
   // and editing on. `role: 'owner'` on a membership means manager, not founder.
@@ -303,10 +343,13 @@ export function GameListing() {
                     className="mt-4 w-full"
                     onClick={() => setCheckoutOpen(true)}
                   >
-                    {game.priceUsd === 0
+                    {owedUsd === 0
                       ? 'Get it free · play now'
-                      : `Buy · ${formatPrice(game.priceUsd)}`}
+                      : `Buy · ${formatPrice(owedUsd)}`}
                   </Button>
+                  {/* The button carries the credit-adjusted number; the trial
+                      panel below explains where the difference went. Saying it
+                      a third time here would just be noise. */}
                   <p className="mt-3 font-body text-[13px] leading-relaxed text-ink-soft">
                     Starts in this tab. No install. All sales final.
                   </p>
@@ -321,7 +364,7 @@ export function GameListing() {
                     onChanged={() => setReloadTick((n) => n + 1)}
                   />
 
-                  <TrialPanel gameId={game.id} onTry={setTrying} />
+                  <TrialPanel trial={trial} onTry={setTrying} />
                   {/* Under the buy button, not beside it. Saving is what you
                       do instead of buying, so it reads as the second option
                       rather than a competing one. */}
@@ -403,7 +446,12 @@ export function GameListing() {
       <SiteFooter />
 
       {checkoutOpen ? (
-        <CheckoutOverlay game={game} onClose={() => setCheckoutOpen(false)} />
+        <CheckoutOverlay
+          game={game}
+          owedUnits={owedUnits}
+          owedUsd={owedUsd}
+          onClose={() => setCheckoutOpen(false)}
+        />
       ) : null}
 
       {playing ? (
@@ -414,7 +462,14 @@ export function GameListing() {
         <TrialSession
           game={game}
           trial={trying}
-          onClose={() => setTrying(null)}
+          onClose={() => {
+            setTrying(null)
+            // A trial spends money, so the listing behind it is now wrong: the
+            // credit it just earned is what comes off the price, and nothing
+            // here had been told about it. Without this the buy box quietly
+            // kept quoting the full price after a session.
+            setReloadTick((n) => n + 1)
+          }}
           onBought={() => grantKey(game.id)}
         />
       ) : null}

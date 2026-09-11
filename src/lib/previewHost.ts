@@ -75,8 +75,16 @@ export function dropAppServiceWorkers(): Promise<void> {
 
 /**
  * Is anything serving there? An opaque no-cors response is a yes; only a
- * genuine network failure rejects. Cheap, and it saves waiting out the iframe
- * timeout on a name nothing is listening on.
+ * genuine network failure rejects. Meant to be cheap, so a name nothing is
+ * listening on gets skipped fast rather than waiting out the iframe timeout —
+ * except this had no timeout of its own, so "genuine network failure" meant
+ * whatever the OS's own TCP connect timeout happens to be. On a loopback
+ * address the browser can't actually route (seen on this machine: `[::1]`
+ * routable-looking but nothing answering), that was **over two minutes** —
+ * comfortably past `LightsDown`'s own boot-sequence ceiling, so the whole
+ * trial died with "did not finish" before this ever got to the twin that
+ * *did* answer. A real loopback response lands in tens of milliseconds; two
+ * seconds is generous and still a rounding error next to two minutes.
  */
 async function reachable(origin: string): Promise<boolean> {
   try {
@@ -84,6 +92,7 @@ async function reachable(origin: string): Promise<boolean> {
       method: 'HEAD',
       mode: 'no-cors',
       cache: 'no-store',
+      signal: AbortSignal.timeout(2000),
     })
     return true
   } catch {
@@ -301,10 +310,30 @@ export function previewHost(): Promise<PreviewLink> {
     )
     return connect(window.location.origin)
   })()
-  return link
+
+  // A failure must not be remembered.
+  //
+  // Memoising the promise is right for the success case — one host per page is
+  // the whole point — but a rejected promise stays rejected, and this was
+  // handed back to every later caller unchanged. So a host that lost one race
+  // to start (a slow dev server, a service worker still unregistering) turned
+  // into a tab where every build from then on failed identically, and only a
+  // reload cleared it. That is the "it says the build failed, then works again
+  // later" report: nothing was ever wrong with the build.
+  // Compared before clearing, so two callers failing over the same host can't
+  // have the second one discard a reconnect the first already started.
+  const mine = link
+  return mine.catch((error: unknown) => {
+    if (link === mine) link = null
+    throw error
+  })
 }
 
-/** True once a host exists, so teardown never spawns one just to tidy up. */
+/**
+ * True once a host has been asked for, so teardown never spawns one purely to
+ * tidy up. Back to false after a failed start, which is correct: there is
+ * nothing there to drop a build from.
+ */
 export function hostExists(): boolean {
   return link !== null
 }

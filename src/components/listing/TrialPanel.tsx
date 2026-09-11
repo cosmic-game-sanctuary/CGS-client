@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/Button'
-import { getTrial, type WireTrial } from '@/api/trials'
+import { type WireTrial } from '@/api/trials'
 import { formatAmount } from '@/lib/format'
 import { signIn, useSession } from '@/auth/session'
+import { useWalletSigner } from '@/auth/useWalletSigner'
 
 /**
  * Try before you buy, under the buy button.
@@ -16,38 +16,31 @@ import { signIn, useSession } from '@/auth/session'
  * ceiling exceeds the game's own price, so the promise on this button is
  * structural rather than marketing.
  *
- * Nothing here subtracts credit from a price. `GET /download` does that, and a
- * second opinion computed on this side could only ever disagree with the one
- * that moves money.
+ * Presentational only. The listing owns the `getTrial` fetch, because the buy
+ * box and the checkout overlay need the same credit-adjusted price and a second
+ * fetch here would be a second source that could disagree with them.
  *
  * The session itself is opened by the route, not from in here. Buying the game
  * mid-trial flips the buy box to its owned state, which would unmount this
  * component and take the running game with it.
  */
 export function TrialPanel({
-  gameId,
+  trial,
   onTry,
 }: {
-  gameId: string
+  /** Null while it loads, or on a game with no trial. */
+  trial: WireTrial | null
   onTry: (trial: WireTrial) => void
 }) {
   const session = useSession()
-  const [trial, setTrial] = useState<WireTrial | null>(null)
-
   const signedIn = session.signedIn
-
-  useEffect(() => {
-    const controller = new AbortController()
-    getTrial(gameId, controller.signal)
-      .then(setTrial)
-      .catch(() => {
-        // A game with no trial answers with everything zeroed rather than an
-        // error, so a failure here is the network and not worth a hole.
-      })
-    return () => controller.abort()
-    // `signedIn` matters: the config is public, but the numbers about you only
-    // come back with a token.
-  }, [gameId, signedIn])
+  // Checkout's Pay button has always waited for this; this one didn't, and a
+  // click landing before Privy's embedded wallet had finished connecting threw
+  // straight out of `signHashes` with no server call to blame it on. Privy
+  // lazily loads its signing iframe on first use, which is slow enough to hit
+  // in the seconds right after a listing loads.
+  const wallet = useWalletSigner()
+  const connecting = signedIn && !wallet.ready
 
   if (!trial?.enabled) return null
 
@@ -56,9 +49,14 @@ export function TrialPanel({
   return (
     <div className="mt-3 rounded-card border-2 border-ink bg-paper px-3.5 py-3">
       {spent ? (
+        // Both numbers come from the server, and `owedUsd` is the one
+        // `/download` will actually charge. Saying only "X comes off" left the
+        // buy button above still reading as the full price, with nothing
+        // anywhere stating what buying now costs.
         <p className="font-mono text-[11px] leading-relaxed text-green">
           <b className="tnum">{formatAmount(trial.creditUsd)}</b> of what you
-          spent trying this already comes off the price.
+          spent trying this comes off the price. It&rsquo;s{' '}
+          <b className="tnum">{formatAmount(trial.owedUsd)}</b> for you now.
         </p>
       ) : (
         <p className="font-mono text-[11px] leading-relaxed text-ink-soft">
@@ -73,14 +71,16 @@ export function TrialPanel({
         variant="neutral"
         size="sm"
         className="mt-2.5 w-full"
-        disabled={trial.chunksLeft <= 0}
+        disabled={trial.chunksLeft <= 0 || connecting}
         onClick={() => (signedIn ? onTry(trial) : signIn())}
       >
         {trial.chunksLeft <= 0
           ? 'No trial time left'
-          : spent
-            ? `Keep playing · ${formatAmount(trial.chunkPriceUsd ?? 0)}`
-            : `Try it · ${formatAmount(trial.chunkPriceUsd ?? 0)} for ${trial.chunkMinutes} min`}
+          : connecting
+            ? 'Connecting wallet…'
+            : spent
+              ? `Keep playing · ${formatAmount(trial.chunkPriceUsd ?? 0)}`
+              : `Try it · ${formatAmount(trial.chunkPriceUsd ?? 0)} for ${trial.chunkMinutes} min`}
       </Button>
     </div>
   )

@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import { formatAmount } from '@/lib/format'
 import { buildPathFor, mountBuildFromPath, buyGame } from '@/api/purchase'
 import { buyChunk, getTrial, type WireTrial } from '@/api/trials'
-import { errorMessage } from '@/lib/api'
+import { ApiError, errorMessage } from '@/lib/api'
 import { useWalletSigner } from '@/auth/useWalletSigner'
 import type { Beat } from '@/components/play/beats'
 import type { Game } from '@/mocks/types'
@@ -25,13 +25,17 @@ import type { Game } from '@/mocks/types'
  * otherwise would be theatre, and pretending the server enforced it would be
  * a lie about what was bought.
  *
- * **Metering runs itself.** Once the build is up, `useMeteredPlay` buys the
- * next chunk a little before the current one runs out — each one a real x402
- * payment signed silently by the player's own embedded wallet, the same call
- * a purchase makes. Leaving unmounts this component and the loop stops with
- * it, so nothing is ever charged for time nobody is playing. This is the
- * consumer side of the same metered-x402 pattern the wishlist agent uses to
- * pay for its own reasoning; the difference is only whose wallet it is.
+ * **Metering runs itself, and there is nothing to press.** `useMeteredPlay`
+ * buys the next chunk shortly before the current one ends, each a real x402
+ * payment signed silently by the player's own embedded wallet. Playing is
+ * paying; the only decision left is when to stop, so Leave is the only button
+ * on the meter. Buying the game is offered when the trial ends, where it is
+ * an actual choice rather than a thing to fumble mid-jump.
+ *
+ * Leaving unmounts this component and the loop dies with it, so nothing is
+ * ever charged for time nobody is playing. This is the consumer side of the
+ * same metered-x402 pattern the wishlist agent uses to pay for its own
+ * reasoning; the difference is only whose wallet it is.
  */
 export function TrialSession({
   game,
@@ -51,8 +55,6 @@ export function TrialSession({
   const [status, setStatus] = useState<WireTrial>(trial)
   /** When the paid-for time runs out. Extended by each chunk the meter buys. */
   const [expiresAt, setExpiresAt] = useState<string | null>(null)
-  /** Everything spent on this game so far, ticking up as the meter runs. */
-  const [paidUsd, setPaidUsd] = useState(trial.spentUsd)
   const [owned, setOwned] = useState(false)
 
   useEffect(() => {
@@ -63,14 +65,17 @@ export function TrialSession({
     }
   }, [])
 
-  /** Re-read the numbers after anything that spends money. */
+  /**
+   * Re-read the numbers after anything that spends money.
+   *
+   * Every figure on the meter comes from here rather than being added up as it
+   * goes. An optimistic total plus a server total that arrives a moment later
+   * is two sources for one number, and they disagree exactly when a charge is
+   * in flight, which is the moment someone is most likely to be looking.
+   */
   const refresh = useCallback(() => {
     getTrial(game.id)
-      .then((fresh) => {
-        setStatus(fresh)
-        // The server's sum is the honest one; never let the corner tick down.
-        setPaidUsd((shown) => Math.max(shown, fresh.spentUsd))
-      })
+      .then(setStatus)
       .catch(() => {
         // The meter going stale is not worth interrupting play for.
       })
@@ -85,10 +90,12 @@ export function TrialSession({
     stopped: owned,
     onChunk: (minutes) => {
       setExpiresAt((prev) => {
+        // Added to whatever is left rather than to now. The chunk was bought
+        // while time remained, and that head start is the point of buying it
+        // early rather than at zero.
         const from = Math.max(Date.now(), new Date(prev ?? '').getTime() || 0)
         return new Date(from + minutes * 60_000).toISOString()
       })
-      setPaidUsd((shown) => shown + (trial.chunkPriceUsd ?? 0))
       refresh()
     },
   })
@@ -118,7 +125,6 @@ export function TrialSession({
           // ours to absorb rather than theirs to pay for. The meter takes
           // over from here.
           setExpiresAt(new Date(Date.now() + held.minutes * 60_000).toISOString())
-          setPaidUsd((shown) => shown + (trial.chunkPriceUsd ?? 0))
           refresh()
         },
       },
@@ -140,13 +146,13 @@ export function TrialSession({
         game={game}
         beats={beats}
         playUrl={playUrl}
+        trial
         onExit={onClose}
         overlay={
           <TrialMeter
             game={game}
             status={status}
             expiresAt={expiresAt}
-            paidUsd={paidUsd}
             metering={meter.running}
             meterError={meter.error}
             owned={owned}
@@ -163,18 +169,26 @@ export function TrialSession({
   )
 }
 
+/** 429 and a dead network are worth waiting out. Nothing else is. */
+function worthRetrying(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false
+  return error.status === 429 || error.status === 0
+}
+
 /**
  * The meter loop.
  *
- * One stable loop for the life of a running trial: every few seconds it looks
- * at how much paid time is left, and once that drops below a floor it buys the
- * next chunk. `buyChunk` is prepare / sign / settle, exactly as a purchase is,
- * and the signature is silent because it is the player's own embedded wallet.
+ * One long-lived loop for the life of a running trial: every few seconds it
+ * looks at how much paid time is left, and once that drops below a floor it
+ * buys the next chunk. `buyChunk` is prepare / sign / settle, exactly as a
+ * purchase is, and the signature is silent because it is the player's own
+ * embedded wallet.
  *
- * It stops the moment `stopped` goes true (bought outright), the cap is hit,
- * or a charge fails — a failed charge is surfaced, not retried on a timer,
- * because the usual cause is an empty wallet and hammering it helps nobody.
- * `retry` is the player saying "go again" by hand.
+ * **A refusal is not always the end.** A rate limit or a dropped connection
+ * says nothing about whether the player can still pay, so those back off and
+ * try again, doubling the wait each time. Anything else — an empty wallet, the
+ * chunk cap — halts the loop, because retrying it on a timer would spend the
+ * time someone paid for on requests that cannot succeed.
  *
  * Unmounting kills it. That is the whole guarantee that leaving stops the
  * charges: there is no server-side timer to cancel, because there is no
@@ -198,9 +212,9 @@ function useMeteredPlay({
   onChunk: (minutes: number) => void
 }) {
   // `halted` is the meter stopping itself — the cap reached, or a charge that
-  // failed. `stopped` is the caller stopping it (bought outright). Running is
-  // neither, and derived rather than synced so nothing has to setState in an
-  // effect to keep it true.
+  // cannot be retried. `stopped` is the caller stopping it (bought outright).
+  // Running is neither, derived rather than synced so nothing has to setState
+  // in an effect to keep it true.
   const [halted, setHalted] = useState<null | 'cap' | 'error'>(null)
   const [error, setError] = useState<string | null>(null)
   const running = !stopped && halted === null
@@ -224,20 +238,23 @@ function useMeteredPlay({
     if (!running) return
 
     // Buy the next chunk this long before the current one ends. A chunk's
-    // prepare / sign / settle has been seen to take ~15s on a cold path, so
-    // the floor is comfortably above that: run out and the game only pauses
-    // for a heartbeat while the next chunk lands.
+    // prepare / sign / settle has been seen to take ~15s on a cold path, and
+    // a retry after a rate limit needs room on top of that.
     const TOP_UP_AT_MS = 30_000
     const POLL_MS = 4_000
+    const BACKOFF_MS = [5_000, 15_000, 40_000]
 
     let stop = false
     let timer: number | undefined
+    let attempt = 0
 
     const loop = async () => {
       if (stop) return
       const exp = expiryRef.current
 
       if (exp) {
+        // The cap is a stopping point, not a failure. The chunk already paid
+        // for keeps running; the takeover lands when it actually expires.
         if (chunksLeftRef.current <= 0) {
           setHalted('cap')
           return
@@ -246,9 +263,18 @@ function useMeteredPlay({
           try {
             const bought = await buyChunk(gameId, signHashes)
             if (stop) return
+            attempt = 0
+            setError(null)
             onChunkRef.current(bought.chunkMinutes || trial.chunkMinutes)
           } catch (err) {
             if (stop) return
+            if (worthRetrying(err) && attempt < BACKOFF_MS.length) {
+              const wait = BACKOFF_MS[attempt]
+              attempt += 1
+              setError(null)
+              timer = window.setTimeout(loop, wait)
+              return
+            }
             setError(errorMessage(err))
             setHalted('error')
             return
@@ -278,18 +304,20 @@ function useMeteredPlay({
  *
  * Not a modal, for the same reason checkout is an overlay rather than a route:
  * the game is running underneath and interrupting it is the one thing this
- * feature cannot afford to do. It carries two facts, the clock and the running
- * total, and one action that matters: leaving. Buying it outright is the other,
- * kept because every cent already spent comes off that price.
+ * feature cannot afford to do. So it is deliberately small and carries only
+ * what someone glancing away from a game can read: the clock, the running
+ * total, and the way out.
  *
- * It lifts on hover the way every solid object in here does (DESIGN.md §4,
- * Press) rather than scaling up as a flat box would.
+ * **No buy button here.** Playing already spends money and the meter already
+ * says so; a second money button beside a running game is a misclick waiting
+ * to happen, and buying is offered properly when the time is up. It lifts on
+ * hover the way every other solid thing in the app does (DESIGN.md §4, Press)
+ * rather than scaling as a flat box would.
  */
 function TrialMeter({
   game,
   status,
   expiresAt,
-  paidUsd,
   metering,
   meterError,
   owned,
@@ -300,7 +328,6 @@ function TrialMeter({
   game: Game
   status: WireTrial
   expiresAt: string | null
-  paidUsd: number
   metering: boolean
   meterError: string | null
   owned: boolean
@@ -317,7 +344,7 @@ function TrialMeter({
   // game keeps running underneath without so much as a reload.
   if (owned) {
     return (
-      <div className="absolute top-3 left-3 z-10 rounded-card border-2 border-ink bg-green px-3 py-2 font-mono text-[11px] text-paper shadow-hard">
+      <div className="absolute top-3 left-3 z-10 rounded-card border-2 border-ink bg-green px-2.5 py-1.5 font-mono text-[10px] text-paper shadow-hard">
         Yours now. Play as long as you like.
       </div>
     )
@@ -328,8 +355,8 @@ function TrialMeter({
   // Under a minute. Read off the string rather than a second clock: anything
   // without an `m` in it is seconds only.
   const low = left !== null && !left.includes('m')
-  const owedUsd = Math.max(0, game.priceUsd - status.creditUsd)
-  const alert = meterError ?? problem
+  // The server's figure, never `price - credit` worked out here. See WireTrial.
+  const owedUsd = status.owedUsd
 
   async function buyOutright() {
     setBuying(true)
@@ -347,17 +374,26 @@ function TrialMeter({
   }
 
   // Time is up. The frame is still running underneath, so this covers it: the
-  // clock is only ever kept by this page, and keeping it means saying no.
+  // clock is only ever kept by this page, and keeping it means saying no. This
+  // is also the one place buying belongs, because it is now a decision someone
+  // is actually being asked to make rather than a button beside a game.
   if (outOfTime) {
+    const stoppedEarly = meterError !== null && status.chunksLeft > 0
     return (
       <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-night/95 px-6 text-center text-paper">
         <h2 className="text-2xl text-paper">That&rsquo;s your time.</h2>
         <p className="max-w-100 font-body text-sm leading-relaxed text-paper/70">
-          {formatAmount(paidUsd)} spent, and all of it comes off the price.
+          {formatAmount(status.spentUsd)} spent, and all of it comes off the
+          price.
         </p>
-        {alert ? (
-          <p role="alert" className="font-body text-sm text-red">
-            {alert}
+        {meterError ? (
+          <p role="alert" className="max-w-100 font-body text-sm text-red">
+            {meterError}
+          </p>
+        ) : null}
+        {problem ? (
+          <p role="alert" className="max-w-100 font-body text-sm text-red">
+            {problem}
           </p>
         ) : null}
         <div className="flex flex-wrap items-center justify-center gap-3">
@@ -368,6 +404,11 @@ function TrialMeter({
           >
             {buying ? 'Paying…' : `Buy it · ${formatAmount(owedUsd)}`}
           </Button>
+          {stoppedEarly ? (
+            <Button variant="neutral" disabled={buying} onClick={onRetry}>
+              Keep playing
+            </Button>
+          ) : null}
           <Button variant="ghost" onClick={onClose}>
             <span className="text-paper">Leave it</span>
           </Button>
@@ -377,13 +418,15 @@ function TrialMeter({
   }
 
   return (
-    <div className="absolute top-3 left-3 z-10 flex max-w-64 flex-col gap-2 rounded-card border-2 border-ink bg-paper/95 px-3.5 py-3 shadow-hard transition-transform duration-130 ease-out hover:-translate-x-px hover:-translate-y-px hover:shadow-hard-lg">
-      <div className="flex gap-4">
+    <div className="absolute top-3 left-3 z-10 flex max-w-56 flex-col gap-1.5 rounded-card border-2 border-ink bg-paper/95 px-2.5 py-2 shadow-hard transition-transform duration-130 ease-out hover:-translate-x-px hover:-translate-y-px hover:shadow-hard-lg">
+      <div className="flex items-start gap-3">
         <div>
-          <span className="label-micro block text-ink-soft">Time left</span>
+          <span className="label-micro block text-[9px] text-ink-soft">
+            Time left
+          </span>
           <span
             className={cn(
-              'tnum block font-mono text-2xl leading-none font-bold',
+              'tnum block font-mono text-base leading-tight font-bold',
               running && low ? 'text-red' : 'text-ink',
             )}
           >
@@ -391,24 +434,26 @@ function TrialMeter({
           </span>
         </div>
         <div>
-          <span className="label-micro block text-ink-soft">Paid so far</span>
-          <span className="tnum block font-mono text-2xl leading-none font-bold text-ink">
-            {formatAmount(paidUsd)}
+          <span className="label-micro block text-[9px] text-ink-soft">
+            Paid so far
+          </span>
+          <span className="tnum block font-mono text-base leading-tight font-bold text-ink">
+            {formatAmount(status.spentUsd)}
           </span>
         </div>
       </div>
 
-      <p className="font-mono text-[10px] leading-relaxed text-ink-soft">
+      <p className="font-mono text-[9px] leading-snug text-ink-soft">
         {metering
-          ? 'Buying each minute as you play. It all comes off the price.'
+          ? 'Buying as you play. It all comes off the price.'
           : status.chunksLeft > 0
-            ? 'Paused. What you spent still comes off the price.'
-            : 'That was the whole trial. All of it comes off the price.'}
+            ? 'Paused. What you spent comes off the price.'
+            : 'Last of your trial time.'}
       </p>
 
-      {alert ? (
-        <p role="alert" className="font-mono text-[10px] text-red">
-          {alert}
+      {meterError ? (
+        <p role="alert" className="font-mono text-[9px] leading-snug text-red">
+          {meterError}
         </p>
       ) : null}
 
@@ -421,14 +466,6 @@ function TrialMeter({
             Keep playing
           </Button>
         ) : null}
-        <Button
-          size="sm"
-          variant="go"
-          disabled={buying}
-          onClick={() => void buyOutright()}
-        >
-          {buying ? 'Paying…' : `Buy · ${formatAmount(owedUsd)}`}
-        </Button>
       </div>
     </div>
   )

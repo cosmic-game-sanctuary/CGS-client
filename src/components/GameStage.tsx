@@ -29,6 +29,7 @@ export function GameStage({
   onExit,
   children,
   hud,
+  trial = false,
   className,
 }: {
   game: Game
@@ -44,6 +45,14 @@ export function GameStage({
    * underneath is the thing it is talking about.
    */
   hud?: ReactNode
+  /**
+   * This play is a paid trial, not a purchase. Playtime counting and cloud
+   * saves both need entitlement the server won't grant a trial holder, so
+   * calling them here only produces a 403 in the console. A trial is
+   * deliberately ephemeral: nothing to sync, and a one-minute look is not a
+   * play worth counting on the listing.
+   */
+  trial?: boolean
   className?: string
 }) {
   const frameRef = useRef<HTMLDivElement>(null)
@@ -54,11 +63,17 @@ export function GameStage({
   // dev's own unpublished zip, and it is the only reason they opened this.
   const src = game.localBuildEntry ?? playUrl ?? null
 
+  // A local zip is the dev previewing their own game, a trial is a paid look
+  // with no key behind it. Neither has anything to sync or a play worth
+  // counting, and both would only 403 the session and save routes.
+  const local = Boolean(game.localBuildEntry)
+  const ephemeral = local || trial
+
   // A play is counted where the frame mounts, which is the only place that
   // knows a game really started. Fire and forget in both directions: a missed
   // count is a wrong number on a listing, never a game that won't run.
   useEffect(() => {
-    if (!src) return
+    if (!src || ephemeral) return
     let sessionId: string | null = null
     let ended = false
 
@@ -71,7 +86,7 @@ export function GameStage({
       ended = true
       if (sessionId) void endSession(game.id, sessionId)
     }
-  }, [game.id, src])
+  }, [game.id, src, ephemeral])
 
   // Cloud saves, around the same frame. The restore has to land before the
   // game reads storage, so the iframe is held back until it has: a game that
@@ -82,13 +97,11 @@ export function GameStage({
   // callback. Setting it synchronously in the effect body is a cascading
   // render, which `react-hooks` rejects and which would flash an empty frame.
   const [restored, setRestored] = useState<string | null>(null)
-  const local = Boolean(game.localBuildEntry)
-  const saveReady = !src || local || restored === game.id
+  const saveReady = !src || ephemeral || restored === game.id
 
   useEffect(() => {
-    // A build mounted from a local zip is the dev previewing their own game.
-    // It has no purchase behind it and nothing to sync.
-    if (!src || local) return
+    // Nothing behind this play to sync: a local preview or a paid trial.
+    if (!src || ephemeral) return
 
     let live = true
     const holder: { session: SaveSession } = { session: {} }
@@ -102,7 +115,7 @@ export function GameStage({
       live = false
       void pushSave(game.id, holder.session)
     }
-  }, [game.id, src, local])
+  }, [game.id, src, ephemeral])
 
   useEffect(() => {
     function onChange() {

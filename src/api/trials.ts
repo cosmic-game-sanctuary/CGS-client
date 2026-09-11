@@ -40,6 +40,15 @@ export interface WireTrial {
   /** What comes off the price. `spent` minus anything already redeemed. */
   creditUnits: number
   creditUsd: number
+  /**
+   * What buying the game costs you right now, credit already deducted.
+   *
+   * The server's own number, from the same function `/download` prices a
+   * purchase with. Never recompute it here as `price - credit`: a second
+   * opinion on this side can only ever disagree with the one that moves money.
+   */
+  owedUnits: number
+  owedUsd: number
   asset: string
   assetDecimals: number
 }

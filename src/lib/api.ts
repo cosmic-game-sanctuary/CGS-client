@@ -313,9 +313,19 @@ export async function requestBytes(
   return out.buffer
 }
 
-/** What to put on screen when a call fails. Server copy wins when there is any. */
+/**
+ * What to put on screen when a call fails. Server copy wins when there is any.
+ *
+ * Fell back to a bare generic line for anything that wasn't an `ApiError`,
+ * which silently ate every message a plain `Error` was thrown with on
+ * purpose — the wallet-not-ready error below, `BuildError`'s specific
+ * unzip/size/host failures, and the boot sequence's own "did not finish, check
+ * your wallet" timeout all wrote real text that nobody could ever see. A
+ * message written at a throw site is written to be shown.
+ */
 export function errorMessage(error: unknown): string {
   if (error instanceof ApiError) return error.message
+  if (error instanceof Error && error.message) return error.message
   return 'Something went wrong. Try that again.'
 }
 

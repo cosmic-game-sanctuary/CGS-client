@@ -37,13 +37,28 @@ function suggestedTopUp(shortfall: number) {
 
 export function CheckoutOverlay({
   game,
+  owedUnits,
+  owedUsd,
   onClose,
 }: {
   game: Game
+  /**
+   * What this buyer actually pays, with any trial credit already off — the
+   * server's figure, the same one `/download` charges. Defaults to the list
+   * price. Everything money-related here reads this, not `game.price*`, or the
+   * funding step asks for a top-up the purchase does not need and the button
+   * quotes a number the buyer is never charged.
+   */
+  owedUnits?: number
+  owedUsd?: number
   onClose: () => void
 }) {
   const session = useSession()
   const wallet = useWalletSigner()
+
+  const oweUnits = owedUnits ?? game.priceUnits
+  const oweUsd = owedUsd ?? game.priceUsd
+  const creditUsd = Math.max(0, game.priceUsd - oweUsd)
 
   // Sticky, because it is the only step you can't leave. Everything before it
   // is derived from the session instead of stored, so signing in or funding in
@@ -62,7 +77,7 @@ export function CheckoutOverlay({
     ? 'paying'
     : !session.signedIn
       ? 'signin'
-      : session.balanceUnits < game.priceUnits
+      : session.balanceUnits < oweUnits
         ? 'funding'
         : 'confirm'
 
@@ -156,7 +171,7 @@ export function CheckoutOverlay({
     setPaying(true)
   }
 
-  const shortfall = Math.max(0, game.priceUsd - session.balanceUsd)
+  const shortfall = Math.max(0, oweUsd - session.balanceUsd)
   const topUp = suggestedTopUp(shortfall)
 
   return (
@@ -199,7 +214,7 @@ export function CheckoutOverlay({
                   ? 'Step 2 of 3 · add funds'
                   : 'Step 3 of 3 · confirm'}
             </span>
-            <PriceChip usd={game.priceUsd} size="sm" />
+            <PriceChip usd={oweUsd} size="sm" />
           </div>
 
           <div className="px-5 py-5">
@@ -244,6 +259,12 @@ export function CheckoutOverlay({
                     <dt className="text-ink-soft">{game.title}</dt>
                     <dd className="tnum">{formatPrice(game.priceUsd)}</dd>
                   </div>
+                  {creditUsd > 0 ? (
+                    <div className="flex justify-between text-green">
+                      <dt>Trial credit</dt>
+                      <dd className="tnum">-{formatPrice(creditUsd)}</dd>
+                    </div>
+                  ) : null}
                 </dl>
 
                 <Button
@@ -271,10 +292,16 @@ export function CheckoutOverlay({
                     <dt className="text-ink-soft">Price</dt>
                     <dd className="tnum">{formatPrice(game.priceUsd)}</dd>
                   </div>
+                  {creditUsd > 0 ? (
+                    <div className="flex justify-between text-green">
+                      <dt>Trial credit</dt>
+                      <dd className="tnum">-{formatPrice(creditUsd)}</dd>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between">
                     <dt className="text-ink-soft">Balance after</dt>
                     <dd className="tnum">
-                      {formatPrice(session.balanceUsd - game.priceUsd)}
+                      {formatPrice(session.balanceUsd - oweUsd)}
                     </dd>
                   </div>
                 </dl>
@@ -286,9 +313,9 @@ export function CheckoutOverlay({
                   disabled={!wallet.ready}
                   onClick={handlePay}
                 >
-                  {game.priceUsd === 0
+                  {oweUsd === 0
                     ? 'Get it and play'
-                    : `Pay ${formatPrice(game.priceUsd)} and play`}
+                    : `Pay ${formatPrice(oweUsd)} and play`}
                 </Button>
                 <p className="mt-3 font-mono text-[11px] text-ink-soft">
                   All sales final. The key is yours to keep.

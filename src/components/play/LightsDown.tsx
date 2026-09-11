@@ -27,6 +27,7 @@ export function LightsDown({
   active = true,
   playUrl,
   overlay,
+  trial = false,
   onExit,
 }: {
   game: Game
@@ -41,6 +42,8 @@ export function LightsDown({
    * modal, because the game underneath is what it is talking about.
    */
   overlay?: ReactNode
+  /** Forwarded to GameStage: a trial has no key, so it skips saves and counts. */
+  trial?: boolean
   onExit: () => void
 }) {
   const [index, setIndex] = useState(-1)
@@ -197,7 +200,13 @@ export function LightsDown({
       {failure ? (
         <Failure message={failure} onExit={beginExit} />
       ) : playing ? (
-        <GameStage game={game} playUrl={playUrl} hud={overlay} onExit={beginExit} />
+        <GameStage
+          game={game}
+          playUrl={playUrl}
+          hud={overlay}
+          trial={trial}
+          onExit={beginExit}
+        />
       ) : (
         <BootSequence beats={beats} index={index} progress={progress} />
       )}
