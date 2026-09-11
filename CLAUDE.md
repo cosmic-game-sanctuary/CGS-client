@@ -190,6 +190,8 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 **Stage:** Integrated against the live API. Money, GameKeys, builds, invites, payouts, withdrawals, sales and paid trials are all real and tested in a browser. **The agent now makes a real contested choice** — two games on sale, budget for one, deferred to the wire and decided there. Four smaller cases are still unrun; see Next up.
 
+**The 11 Sep testing round is written and mostly browser-verified** (see the log entry below): the trial stops the frame instead of covering it, "Try it" signs in through our own screen before Privy's, a slow studio request can't render as "not found", the agent can claim an ENS name, and two roster/splits bugs found in that same browser pass are also fixed. The only remaining item, `APP_URL` + SPF, is not code — it is waiting on a deployed host and a DNS record.
+
 > **The database is shared and a migration is a deploy.** Both sides point at one Neon database, so branching code does not branch the schema. Stage 18 dropped `wishlist_agents.target_game_id`, which broke the *other* checkout with no code change on that side. If the server throws `column … does not exist`, pull before debugging.
 **Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@privy-io/react-auth`, `@iconify-json/streamline-freehand` (dev)
 **Screens built:** catalog (`/`), listing (`/game/:slug`), manage (`/game/:slug/manage`), checkout overlay, player (`/play/:slug`), publish (`/publish`), studio (`/studio/:id` and `/studio/new`), library (`/library`), money (`/money`), profile (`/u/:handle`), invite (`/invite/:id`), 404
@@ -320,6 +322,60 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 ### Log
 
 _Newest first._
+
+#### 2026-09-11 (11 Sep testing round) — Priyanshu
+
+Went through Kai's testing-round findings for whatever landed in this repo.
+Full cross-repo detail and reasoning is in `../CGS-docs/PROGRESS-LOG.md`
+(2026-09-11 entries) and `../docs/testing-round-2026-09-11.md`; this is the
+frontend-only summary.
+
+- **The trial now stops when the time does.** `LightsDown` gained a
+  `takeover` slot rendered through `GameStage`'s `children`, which replaces
+  the build frame instead of drawing over it. The end-of-trial screen used to
+  sit *over* a still-running iframe, so the game kept playing and making
+  noise behind a screen saying it had ended — there is no pause API for a
+  cross-origin build, so unmounting it is the only real fix. Buying from that
+  screen now restarts the game, and the copy says so.
+- **"Try it" climbs checkout's own sign-in and funding ladder.** Those two
+  panels came out of `CheckoutOverlay` into
+  `components/checkout/AccountGate.tsx`, with the phase rule split into
+  `lib/gate.ts` (a file exporting both a component and a function breaks fast
+  refresh). `TrialGate` in `TrialSession.tsx` uses the same two panels.
+  Signed out, pressing "Try it" used to drop straight into Privy's modal with
+  nothing of ours in front of it.
+- **`isMine` is gone from `Studio.tsx`.** It meant "this is the session's
+  primary studio", so someone on two teams got "my studio" copy on one and
+  "theirs" on the other. Replaced with `onTeam` (member of this team) and
+  `isFounder` (`ownerUserId === session.userId`) throughout. "Leave this
+  studio" is now correctly gated on membership.
+- **A slow request could erase a real studio.** `Studio.tsx`'s one waterfall
+  effect (studio, then its games) is two effects now: only the studio fetch
+  may render "No studio here", and a slow or failed game list fails into an
+  empty shelf with its own note instead.
+- **The agent page can claim a name**, post-creation, in
+  `components/agent/AgentName.tsx`. Deliberately not in `AgentSetup` — the
+  comment already there about not asking for a name before the agent exists
+  is right, so this respects it rather than routing around it.
+- **Funding polls instead of re-reading once.** `/api/me` reads the balance
+  from the Mirror Node, a beat behind consensus, so the old single re-read
+  after `fund()` could report the pre-transfer number and never try again.
+  It now re-reads until the number changes or twelve seconds pass, matching
+  `waitForKey`'s shape for a GameKey mint.
+- **Two bugs found from Kai's own browser pass, not from re-reading code,
+  both fixed:** a manager's own row in `TeamRoster` offered to manage itself
+  (no per-row exclusion existed; the server now sends `viewerMemberId` so the
+  client can hide the block on the viewer's own row), and `Publish.tsx`'s
+  splits editor could permanently record the publisher's name as the literal
+  word "you" — a `useState` initializer captured `session.handle ?? 'you'`
+  once, before the session had necessarily hydrated, with no field to notice
+  or correct it. Now derived live (`resolvedMembers`, a `useMemo`) instead of
+  frozen at mount.
+- **A debugging detour, not a code bug, worth remembering:** two
+  `npm run dev` processes ended up bound to port 3000 for part of this
+  session, so a landed fix could still look broken depending on which one
+  served a given request. See the new row in `CGS-server/CLAUDE.md`'s
+  gotchas table.
 
 #### 2026-09-09 (W9, the agent decides at the wire) — Suparno
 

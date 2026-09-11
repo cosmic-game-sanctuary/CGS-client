@@ -27,14 +27,32 @@ export function TeamRoster({
   studioId,
   members,
   canManage,
+  isMember,
   isFounder,
+  viewerMemberId,
   onChanged,
 }: {
   studioId: string
   members: WireStudioMember[]
   /** The founder, or a member promoted to manager. */
   canManage: boolean
+  /**
+   * On this team at all. Separate from `canManage`, and the roster is public,
+   * so without it every stranger who opened the page was offered a way to
+   * leave a studio they had never joined.
+   */
+  isMember: boolean
   isFounder: boolean
+  /**
+   * Which row is the viewer's own, if any. `canManage` used to be the only
+   * gate, which put "Make member", "Remove" and "Hand over" on a manager's
+   * own row, pointed at themselves — demoting or removing yourself this way
+   * makes no sense, and "Hand over" targeted at your own row would have
+   * transferred the studio to no one. Leaving is already its own button, for
+   * a reason: it is reversible-by-nobody-but-you, unlike a founder or manager
+   * acting on somebody else.
+   */
+  viewerMemberId: string | null
   onChanged: () => void
 }) {
   const [busy, setBusy] = useState<string | null>(null)
@@ -87,7 +105,7 @@ export function TeamRoster({
                 </span>
               </span>
 
-              {canManage ? (
+              {canManage && member.id !== viewerMemberId ? (
                 <span className="mt-2.5 flex flex-wrap items-center gap-x-1 gap-y-1.5 border-t-2 border-paper-deep pt-2.5">
                   {pending ? (
                     <>
@@ -166,7 +184,7 @@ export function TeamRoster({
         payout stays exactly where it is.
       </p>
 
-      {!isFounder && active.length > 0 ? (
+      {isMember && !isFounder && active.length > 0 ? (
         <Button
           size="sm"
           variant="ghost"

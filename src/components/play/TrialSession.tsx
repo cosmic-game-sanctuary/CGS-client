@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { LightsDown } from '@/components/play/LightsDown'
+import {
+  FundingBody,
+  GateShell,
+  SignInBody,
+} from '@/components/checkout/AccountGate'
 import { useCountdown } from '@/lib/countdown'
+import { gatePhaseFor } from '@/lib/gate'
 import { cn } from '@/lib/utils'
-import { formatAmount } from '@/lib/format'
+import { formatAmount, formatPrice } from '@/lib/format'
 import { buildPathFor, mountBuildFromPath, buyGame } from '@/api/purchase'
 import { buyChunk, getTrial, type WireTrial } from '@/api/trials'
 import { ApiError, errorMessage } from '@/lib/api'
+import { fund, signIn, useSession } from '@/auth/session'
 import { useWalletSigner } from '@/auth/useWalletSigner'
 import type { Beat } from '@/components/play/beats'
 import type { Game } from '@/mocks/types'
@@ -36,6 +43,12 @@ import type { Game } from '@/mocks/types'
  * ever charged for time nobody is playing. This is the consumer side of the
  * same metered-x402 pattern the wishlist agent uses to pay for its own
  * reasoning; the difference is only whose wallet it is.
+ *
+ * Three components, in the order someone meets them. `TrialGate` is the
+ * sign-in and funding ladder, skipped entirely by anyone already signed in
+ * with money in the wallet. `RunningTrial` is the game and the meter.
+ * `TrialOver` replaces the frame when the time is up, which is the only thing
+ * that actually stops a cross-origin build.
  */
 export function TrialSession({
   game,
@@ -48,6 +61,198 @@ export function TrialSession({
   trial: WireTrial
   onClose: () => void
   /** They bought the game outright from inside the trial. */
+  onBought: () => void
+}) {
+  const session = useSession()
+  // One chunk is the entry price, not the game's. Trying something for a
+  // minute should not ask for the whole cover charge up front.
+  const needUnits = trial.chunkPriceUnits ?? 0
+
+  // Latched at mount, and only ever set forward. Someone already signed in
+  // with money in the wallet pressed a button that said "Try it" and meant it,
+  // so they go straight in. Everyone else climbs the ladder and presses start
+  // at the top of it. It cannot be derived every render: the meter spends the
+  // balance as they play, and a derived gate would slam shut mid-game and take
+  // the running build with it.
+  const [launched, setLaunched] = useState(
+    () => gatePhaseFor(session, needUnits) === 'ready',
+  )
+
+  if (!launched) {
+    return (
+      <TrialGate
+        game={game}
+        trial={trial}
+        needUnits={needUnits}
+        onStart={() => setLaunched(true)}
+        onClose={onClose}
+      />
+    )
+  }
+
+  return (
+    <RunningTrial
+      game={game}
+      trial={trial}
+      onClose={onClose}
+      onBought={onBought}
+    />
+  )
+}
+
+/**
+ * Sign in, then put something in the wallet, then start.
+ *
+ * The same two panels checkout uses, because they are the same two questions
+ * and there is no reason for a person to meet two different versions of them.
+ * Pressing "Try it" signed out used to drop straight into Privy's modal with
+ * nothing of ours in front of it, and pressing it with an empty wallet started
+ * a session whose very first charge could only fail, after the build had
+ * downloaded and the shutter had come up.
+ */
+function TrialGate({
+  game,
+  trial,
+  needUnits,
+  onStart,
+  onClose,
+}: {
+  game: Game
+  trial: WireTrial
+  needUnits: number
+  onStart: () => void
+  onClose: () => void
+}) {
+  const session = useSession()
+  const wallet = useWalletSigner()
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  const phase = gatePhaseFor(session, needUnits)
+  const chunkUsd = trial.chunkPriceUsd ?? 0
+  const shortfall = Math.max(0, chunkUsd - session.balanceUsd)
+
+  async function handleFund(amount: number) {
+    setBusy(true)
+    setProblem(null)
+    try {
+      // TODO(integration): Privy's own funding UI replaces the dev faucet
+      // before any deploy. Same call site either way.
+      await fund(amount)
+    } catch (error) {
+      setProblem(errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`Try ${game.title}`}
+    >
+      <GateShell
+        title="this trial"
+        step={
+          phase === 'signin'
+            ? 'Step 1 of 2 · sign in'
+            : phase === 'funding'
+              ? 'Step 2 of 2 · add funds'
+              : 'Ready when you are'
+        }
+        priceUsd={chunkUsd}
+        problem={problem}
+        onClose={onClose}
+      >
+        {phase === 'signin' ? (
+          <SignInBody
+            heading="Sign in to try it"
+            onSignIn={() => {
+              setProblem(null)
+              signIn()
+            }}
+          />
+        ) : phase === 'funding' ? (
+          <FundingBody
+            shortfallUsd={shortfall}
+            lines={[
+              { label: 'Balance', value: formatPrice(session.balanceUsd) },
+              {
+                label: `${trial.chunkMinutes} minutes`,
+                value: formatAmount(chunkUsd),
+              },
+              {
+                label: 'Never more than',
+                value: formatAmount(trial.worstCaseUsd),
+              },
+            ]}
+            busy={busy}
+            onFund={(amount) => void handleFund(amount)}
+          />
+        ) : (
+          <>
+            <h2 className="text-2xl">{game.title}</h2>
+            <p className="mt-2 font-body text-sm leading-relaxed text-ink-soft">
+              {trial.chunkMinutes} minutes at a time, bought as you play. Stop
+              whenever you like and nothing more is charged.
+            </p>
+
+            <dl className="mt-5 flex flex-col gap-1.5 rounded-card border-2 border-ink bg-paper-sunk px-4 py-3 font-mono text-[13px]">
+              <div className="flex justify-between">
+                <dt className="text-ink-soft">
+                  First {trial.chunkMinutes} minutes
+                </dt>
+                <dd className="tnum">{formatAmount(chunkUsd)}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-ink-soft">Never more than</dt>
+                <dd className="tnum">{formatAmount(trial.worstCaseUsd)}</dd>
+              </div>
+              <div className="flex justify-between text-green">
+                <dt>Comes off the price</dt>
+                <dd className="tnum">all of it</dd>
+              </div>
+            </dl>
+
+            <Button
+              variant="primary"
+              size="lg"
+              className="mt-4 w-full"
+              disabled={!wallet.ready}
+              onClick={onStart}
+            >
+              {wallet.ready
+                ? `Start playing · ${formatAmount(chunkUsd)}`
+                : 'Connecting wallet…'}
+            </Button>
+            <p className="mt-3 font-mono text-[11px] text-ink-soft">
+              Every cent comes off the price if you buy it.
+            </p>
+          </>
+        )}
+      </GateShell>
+    </div>
+  )
+}
+
+/**
+ * The trial itself, once there is an account with money in it.
+ *
+ * Mounted only when that is true, so the first beat's payment has something to
+ * pay with, and never unmounted for a balance that drops as the meter spends
+ * it.
+ */
+function RunningTrial({
+  game,
+  trial,
+  onClose,
+  onBought,
+}: {
+  game: Game
+  trial: WireTrial
+  onClose: () => void
   onBought: () => void
 }) {
   const signer = useWalletSigner()
@@ -100,6 +305,16 @@ export function TrialSession({
     },
   })
 
+  /**
+   * One clock for the session, read here rather than inside the meter.
+   *
+   * Running out of time is not a thing the meter can decide on its own any
+   * more: it changes what is rendered in the frame's place, so the component
+   * that owns the frame has to be the one that knows.
+   */
+  const left = useCountdown(expiresAt ?? '')
+  const outOfTime = expiresAt !== null && left === null && !owned
+
   const beats = useMemo<Beat[]>(() => {
     // Held between two steps of one run, so it belongs to this sequence and
     // dies with it. Same shape as the purchase path, same reason.
@@ -149,20 +364,32 @@ export function TrialSession({
         trial
         onExit={onClose}
         overlay={
-          <TrialMeter
-            game={game}
-            status={status}
-            expiresAt={expiresAt}
-            metering={meter.running}
-            meterError={meter.error}
-            owned={owned}
-            onRetry={meter.retry}
-            onBought={() => {
-              setOwned(true)
-              onBought()
-            }}
-            onClose={onClose}
-          />
+          outOfTime ? undefined : (
+            <TrialMeter
+              status={status}
+              left={left}
+              metering={meter.running}
+              meterError={meter.error}
+              owned={owned}
+              onRetry={meter.retry}
+              onClose={onClose}
+            />
+          )
+        }
+        takeover={
+          outOfTime ? (
+            <TrialOver
+              game={game}
+              status={status}
+              meterError={meter.error}
+              onRetry={meter.retry}
+              onBought={() => {
+                setOwned(true)
+                onBought()
+              }}
+              onClose={onClose}
+            />
+          ) : undefined
         }
       />
     </div>
@@ -313,109 +540,44 @@ function useMeteredPlay({
  * to happen, and buying is offered properly when the time is up. It lifts on
  * hover the way every other solid thing in the app does (DESIGN.md §4, Press)
  * rather than scaling as a flat box would.
+ *
+ * The clock comes in as a prop. It used to be read here, which meant the only
+ * thing that knew the trial had ended was a chip drawn *over* the game, and
+ * all a chip can do is cover something. See `TrialOver`.
  */
 function TrialMeter({
-  game,
   status,
-  expiresAt,
+  left,
   metering,
   meterError,
   owned,
   onRetry,
-  onBought,
   onClose,
 }: {
-  game: Game
   status: WireTrial
-  expiresAt: string | null
+  /** Time left as text, or null once the deadline has passed. */
+  left: string | null
   metering: boolean
   meterError: string | null
   owned: boolean
   onRetry: () => void
-  onBought: () => void
   onClose: () => void
 }) {
-  const signer = useWalletSigner()
-  const left = useCountdown(expiresAt ?? '')
-  const [buying, setBuying] = useState(false)
-  const [problem, setProblem] = useState<string | null>(null)
-
-  // Bought outright from in here. The meter has nothing left to say, and the
-  // game keeps running underneath without so much as a reload.
+  // Bought outright. The only way here is through `TrialOver`, which means the
+  // frame was unmounted and has just come back, so the game has restarted and
+  // the copy says so rather than letting that look like a glitch.
   if (owned) {
     return (
-      <div className="absolute top-3 left-3 z-10 rounded-card border-2 border-ink bg-green px-2.5 py-1.5 font-mono text-[10px] text-paper shadow-hard">
-        Yours now. Play as long as you like.
+      <div className="absolute top-3 left-3 z-10 max-w-56 rounded-card border-2 border-ink bg-green px-2.5 py-1.5 font-mono text-[10px] leading-snug text-paper shadow-hard">
+        Yours now. It starts again from the top, and you can play as long as
+        you like.
       </div>
     )
   }
 
-  const outOfTime = expiresAt !== null && left === null
-  const running = expiresAt !== null && left !== null
   // Under a minute. Read off the string rather than a second clock: anything
   // without an `m` in it is seconds only.
   const low = left !== null && !left.includes('m')
-  // The server's figure, never `price - credit` worked out here. See WireTrial.
-  const owedUsd = status.owedUsd
-
-  async function buyOutright() {
-    setBuying(true)
-    setProblem(null)
-    try {
-      // The ordinary purchase. `/download` subtracts what the trial already
-      // paid, so this charges the difference with nothing here doing sums.
-      await buyGame(game.id, signer.signHashes)
-      onBought()
-    } catch (error) {
-      setProblem(errorMessage(error))
-    } finally {
-      setBuying(false)
-    }
-  }
-
-  // Time is up. The frame is still running underneath, so this covers it: the
-  // clock is only ever kept by this page, and keeping it means saying no. This
-  // is also the one place buying belongs, because it is now a decision someone
-  // is actually being asked to make rather than a button beside a game.
-  if (outOfTime) {
-    const stoppedEarly = meterError !== null && status.chunksLeft > 0
-    return (
-      <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-night/95 px-6 text-center text-paper">
-        <h2 className="text-2xl text-paper">That&rsquo;s your time.</h2>
-        <p className="max-w-100 font-body text-sm leading-relaxed text-paper/70">
-          {formatAmount(status.spentUsd)} spent, and all of it comes off the
-          price.
-        </p>
-        {meterError ? (
-          <p role="alert" className="max-w-100 font-body text-sm text-red">
-            {meterError}
-          </p>
-        ) : null}
-        {problem ? (
-          <p role="alert" className="max-w-100 font-body text-sm text-red">
-            {problem}
-          </p>
-        ) : null}
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <Button
-            variant="primary"
-            disabled={buying}
-            onClick={() => void buyOutright()}
-          >
-            {buying ? 'Paying…' : `Buy it · ${formatAmount(owedUsd)}`}
-          </Button>
-          {stoppedEarly ? (
-            <Button variant="neutral" disabled={buying} onClick={onRetry}>
-              Keep playing
-            </Button>
-          ) : null}
-          <Button variant="ghost" onClick={onClose}>
-            <span className="text-paper">Leave it</span>
-          </Button>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="absolute top-3 left-3 z-10 flex max-w-56 flex-col gap-1.5 rounded-card border-2 border-ink bg-paper/95 px-2.5 py-2 shadow-hard transition-transform duration-130 ease-out hover:-translate-x-px hover:-translate-y-px hover:shadow-hard-lg">
@@ -427,7 +589,7 @@ function TrialMeter({
           <span
             className={cn(
               'tnum block font-mono text-base leading-tight font-bold',
-              running && low ? 'text-red' : 'text-ink',
+              low ? 'text-red' : 'text-ink',
             )}
           >
             {left ?? '—'}
@@ -466,6 +628,98 @@ function TrialMeter({
             Keep playing
           </Button>
         ) : null}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Time is up.
+ *
+ * Rendered **in place of** the build, not over it. That is the whole point:
+ * this used to be an overlay, and an overlay cannot stop a game. The frame
+ * kept running behind it, audio and all, while the screen in front said the
+ * trial had ended. A cross-origin build has no pause to call, so unmounting it
+ * is the only thing that actually stops it, and stopping it is what keeping
+ * the deal means.
+ *
+ * It is also the one place buying belongs. On the running meter it would be a
+ * money button beside a game somebody is playing; here it is a decision they
+ * are actually being asked to make.
+ */
+function TrialOver({
+  game,
+  status,
+  meterError,
+  onRetry,
+  onBought,
+  onClose,
+}: {
+  game: Game
+  status: WireTrial
+  meterError: string | null
+  onRetry: () => void
+  onBought: () => void
+  onClose: () => void
+}) {
+  const signer = useWalletSigner()
+  const [buying, setBuying] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  // The meter halting on an error while chunks remain is a different ending
+  // from running out of them, and only the first is worth offering to resume.
+  const stoppedEarly = meterError !== null && status.chunksLeft > 0
+  // The server's figure, never `price - credit` worked out here. See WireTrial.
+  const owedUsd = status.owedUsd
+
+  async function buyOutright() {
+    setBuying(true)
+    setProblem(null)
+    try {
+      // The ordinary purchase. `/download` subtracts what the trial already
+      // paid, so this charges the difference with nothing here doing sums.
+      await buyGame(game.id, signer.signHashes)
+      onBought()
+    } catch (error) {
+      setProblem(errorMessage(error))
+    } finally {
+      setBuying(false)
+    }
+  }
+
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-4 bg-night px-6 text-center text-paper">
+      <h2 className="text-2xl text-paper">That&rsquo;s your time.</h2>
+      <p className="max-w-100 font-body text-sm leading-relaxed text-paper/70">
+        {formatAmount(status.spentUsd)} spent, and all of it comes off the
+        price.
+      </p>
+      {meterError ? (
+        <p role="alert" className="max-w-100 font-body text-sm text-red">
+          {meterError}
+        </p>
+      ) : null}
+      {problem ? (
+        <p role="alert" className="max-w-100 font-body text-sm text-red">
+          {problem}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <Button
+          variant="primary"
+          disabled={buying}
+          onClick={() => void buyOutright()}
+        >
+          {buying ? 'Paying…' : `Buy it · ${formatAmount(owedUsd)}`}
+        </Button>
+        {stoppedEarly ? (
+          <Button variant="neutral" disabled={buying} onClick={onRetry}>
+            Keep playing
+          </Button>
+        ) : null}
+        <Button variant="ghost" onClick={onClose}>
+          <span className="text-paper">Leave it</span>
+        </Button>
       </div>
     </div>
   )

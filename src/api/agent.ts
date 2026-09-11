@@ -76,6 +76,14 @@ export function updateAgent(body: {
   onTimeout?: 'buy' | 'skip'
   /** Explicit null clears an expiry. Omit to leave it alone. */
   expiresAt?: string | null
+  /**
+   * Claim a name on Sepolia, the same subname a studio gets and out of the
+   * same flat namespace, so `GET /api/studios/ens-availability` answers for
+   * both. Write-once: an agent that already has one answers `409
+   * AGENT_ALREADY_NAMED`, because a rename would mint a second name and leave
+   * the first pointing at the same wallet. Slow, like every chain write here.
+   */
+  ensLabel?: string
 }): Promise<WireAgent> {
   return request<WireAgent>('/api/me/agent', { method: 'PATCH', body })
 }

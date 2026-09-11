@@ -27,6 +27,7 @@ export function LightsDown({
   active = true,
   playUrl,
   overlay,
+  takeover,
   trial = false,
   onExit,
 }: {
@@ -42,6 +43,15 @@ export function LightsDown({
    * modal, because the game underneath is what it is talking about.
    */
   overlay?: ReactNode
+  /**
+   * Rendered **instead of** the build, which is the whole difference between
+   * this and `overlay`. A trial whose time is up used to draw its takeover
+   * over a frame that was still running: the game carried on playing and
+   * making noise behind a screen saying it had stopped. There is no pause API
+   * for a cross-origin build, so taking the frame out of the DOM is what
+   * actually stops it.
+   */
+  takeover?: ReactNode
   /** Forwarded to GameStage: a trial has no key, so it skips saves and counts. */
   trial?: boolean
   onExit: () => void
@@ -206,7 +216,9 @@ export function LightsDown({
           hud={overlay}
           trial={trial}
           onExit={beginExit}
-        />
+        >
+          {takeover}
+        </GameStage>
       ) : (
         <BootSequence beats={beats} index={index} progress={progress} />
       )}

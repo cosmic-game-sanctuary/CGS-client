@@ -5,11 +5,11 @@ import { SiteFooter } from '@/components/SiteFooter'
 import { SiteHeader } from '@/components/SiteHeader'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { Sticker } from '@/components/ui/Sticker'
-import { errorMessage } from '@/lib/api'
+import { ApiError, errorMessage } from '@/lib/api'
 import { formatAmount } from '@/lib/format'
 import { acceptInvite, getInvite, type WireInvite } from '@/api/invites'
 import { getMyEarnings, type WirePersonalEarnings } from '@/api/earnings'
-import { joinStudio, signIn, useSession } from '@/auth/session'
+import { joinStudio, signIn, signOut, useSession } from '@/auth/session'
 
 /**
  * The other end of the splits editor.
@@ -49,6 +49,10 @@ export function InviteAccept() {
   const [claimed, setClaimed] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // A refused accept and a *wrong account* are different problems with
+  // different exits: one is "try again", the other is "you are the wrong
+  // person". Only the second gets a sign-out button.
+  const [wrongAccount, setWrongAccount] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -199,6 +203,7 @@ export function InviteAccept() {
             label="Role"
             value={invite.role === 'owner' ? 'manager' : 'member'}
           />
+          <Fact label="Sent to" value={invite.email} />
         </dl>
         <p className="mt-4 border-t-2 border-ink pt-3 font-mono text-[11px] leading-relaxed text-ink-soft">
           Nobody can change any of that, including us. Splits are fixed at
@@ -228,7 +233,8 @@ export function InviteAccept() {
                 {session.label ?? session.email}
               </b>
               . That is the wallet it will pay into, from the next sale and for
-              everything it already owes you.
+              everything it already owes you. It has to be the account this
+              invite was sent to, {invite.email}, or the claim is refused.
             </p>
 
             <div className="flex flex-wrap items-center gap-5">
@@ -244,6 +250,7 @@ export function InviteAccept() {
                 onClick={() => {
                   setBusy(true)
                   setProblem(null)
+                  setWrongAccount(false)
                   acceptInvite(id)
                     .then(() => {
                       setClaimed(id)
@@ -251,7 +258,13 @@ export function InviteAccept() {
                       // nothing to set locally, only something to re-read.
                       joinStudio()
                     })
-                    .catch((error: unknown) => setProblem(errorMessage(error)))
+                    .catch((error: unknown) => {
+                      setWrongAccount(
+                        error instanceof ApiError &&
+                          error.code === 'INVITE_EMAIL_MISMATCH',
+                      )
+                      setProblem(errorMessage(error))
+                    })
                     .finally(() => setBusy(false))
                 }}
               >
@@ -270,9 +283,16 @@ export function InviteAccept() {
             </div>
 
             {problem ? (
-              <p role="alert" className="font-body text-sm text-red">
-                {problem}
-              </p>
+              <div className="flex flex-wrap items-center gap-4">
+                <p role="alert" className="font-body text-sm text-red">
+                  {problem}
+                </p>
+                {wrongAccount ? (
+                  <Button variant="neutral" size="sm" onClick={() => signOut()}>
+                    Sign in as someone else
+                  </Button>
+                ) : null}
+              </div>
             ) : null}
           </>
         )}

@@ -7,10 +7,13 @@ import { request } from '@/lib/api'
  * which is also what a split points at when the person it credits has no wallet
  * yet. That is why the share can exist before the account does.
  *
- * Three things about this API are easy to guess wrong:
+ * Four things about this API are easy to guess wrong:
  *
  * - **There is no decline endpoint.** Not accepting is the decline, and it is
  *   reversible by opening the link again later. Nothing is destroyed either way.
+ * - **The link is not a bearer token.** Accepting checks the signed-in address
+ *   against the one the invite was sent to. A forwarded link opened by the
+ *   wrong account is refused, not honoured.
  * - **The handle is not editable here.** It was chosen by whoever did the
  *   inviting and it is already on the published splits, which are immutable. A
  *   field offering to change it would be offering something we cannot do.
@@ -22,6 +25,13 @@ import { request } from '@/lib/api'
 export interface WireInvite {
   /** What this studio calls you on its credits. Already on the splits. */
   handle: string
+  /**
+   * The address it was sent to, **masked** (`ka•••@example.com`). This route
+   * takes no auth, so the server never sends the whole thing — it is here to
+   * be recognised, not to be read off. Accepting from a different account is
+   * refused with `INVITE_EMAIL_MISMATCH`.
+   */
+  email: string
   /** `owner` means manager, not founder. */
   role: 'owner' | 'member'
   accepted: boolean

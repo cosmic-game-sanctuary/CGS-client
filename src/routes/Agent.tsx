@@ -3,6 +3,7 @@ import { Freehand } from '@/components/icons/Freehand'
 import { SiteFooter } from '@/components/SiteFooter'
 import { SiteHeader } from '@/components/SiteHeader'
 import { Button } from '@/components/ui/Button'
+import { AgentName } from '@/components/agent/AgentName'
 import { AgentSetup } from '@/components/agent/AgentSetup'
 import { AgentWants } from '@/components/agent/AgentWants'
 import { DecisionFeed } from '@/components/agent/DecisionFeed'
@@ -287,11 +288,7 @@ function Running({
             <p className="mt-1 font-mono text-[11px] text-ink-soft">
               {STATUS[agent.status]}
             </p>
-            {agent.ensName ? (
-              <p className="mt-2 rounded-chip border-2 border-ink bg-paper-sunk px-2.5 py-1 text-center font-mono text-[12px] font-semibold">
-                {agent.ensName}
-              </p>
-            ) : null}
+            <AgentName agent={agent} onNamed={onReload} />
           </div>
 
           {broke ? (

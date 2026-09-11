@@ -1,5 +1,5 @@
 import { createContext, use } from 'react'
-import { faucet } from '@/api/me'
+import { faucet, getMe } from '@/api/me'
 
 /**
  * Who you are, and what your wallet holds.
@@ -167,7 +167,37 @@ export function grantKey(gameId: string) {
  * TODO(integration): Privy's own funding UI replaces this before any deploy.
  */
 export async function fund(amountUsd?: number): Promise<void> {
+  // What the wallet held before, so there is something to compare against.
+  // Cheap, and the alternative is guessing when the money has landed.
+  const before = await getMe()
+    .then((me) => me.balanceUnits)
+    .catch(() => null)
+
   await faucet(amountUsd === undefined ? {} : { amount: amountUsd })
+
+  // The transfer reached consensus before the faucet responded, but `/api/me`
+  // reads the balance from the Mirror Node and the mirror is a beat or two
+  // behind consensus. A single re-read fired here therefore reports the
+  // balance from *before* the money arrived, which is the "funded it, had to
+  // reload to see it" the 11 Sep testing round found. The server route says as
+  // much in its own comment and assumed the client would keep asking; it did
+  // not. So it asks until the number moves.
+  //
+  // Same shape as `waitForKey`: a bounded poll of something that is already
+  // true on chain, with a refresh whether or not it is seen in time.
+  if (before !== null) {
+    const deadline = Date.now() + 12_000
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 1200))
+      try {
+        const me = await getMe()
+        if (me.balanceUnits !== before) break
+      } catch {
+        break // an unreadable /api/me is the refresh below's problem, not this loop's
+      }
+    }
+  }
+
   sessionBridge.refresh?.()
 }
 

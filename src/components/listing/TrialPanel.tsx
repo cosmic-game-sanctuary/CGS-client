@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/Button'
 import { type WireTrial } from '@/api/trials'
 import { formatAmount } from '@/lib/format'
-import { signIn, useSession } from '@/auth/session'
+import { useSession } from '@/auth/session'
 import { useWalletSigner } from '@/auth/useWalletSigner'
 
 /**
@@ -23,6 +23,11 @@ import { useWalletSigner } from '@/auth/useWalletSigner'
  * The session itself is opened by the route, not from in here. Buying the game
  * mid-trial flips the buy box to its owned state, which would unmount this
  * component and take the running game with it.
+ *
+ * Pressing this signed out no longer calls `signIn()` straight off. It opens
+ * the trial, which puts our own sign-in step in front of Privy's modal, then
+ * asks for funds if the wallet has none. Same ladder checkout climbs, same
+ * panels. See `TrialGate`.
  */
 export function TrialPanel({
   trial,
@@ -72,7 +77,7 @@ export function TrialPanel({
         size="sm"
         className="mt-2.5 w-full"
         disabled={trial.chunksLeft <= 0 || connecting}
-        onClick={() => (signedIn ? onTry(trial) : signIn())}
+        onClick={() => onTry(trial)}
       >
         {trial.chunksLeft <= 0
           ? 'No trial time left'

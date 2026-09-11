@@ -91,6 +91,27 @@ export function Publish() {
   const [members, setMembers] = useState<DraftMember[]>([
     { id: 'm_owner', label: myHandle, role: 'code', pct: 100, kind: 'you' },
   ])
+  // `myHandle` is null-coalesced to the literal word "you" while `/api/me`
+  // is still loading, and that fallback used to get baked into a published
+  // game's splits forever: the row above is a `useState` initial value,
+  // captured once at the first render, and this screen can render before the
+  // session has hydrated — straight after sign-in, or a hard refresh on
+  // `/publish`. The row's name has no input of its own to notice or correct
+  // that either; role and percentage are editable, the name never was. So a
+  // race that resolved a moment later published silently wrong, with nothing
+  // on screen to catch it.
+  //
+  // The "you" row's label is resolved live off the session wherever it is
+  // read, rather than trusted from state, so it can never go stale — derived,
+  // not synced, same rule as everywhere else in this app that reacts to a
+  // value arriving after first render (react-hooks/set-state-in-effect).
+  const resolvedMembers = useMemo(
+    () =>
+      members.map((member) =>
+        member.kind === 'you' ? { ...member, label: myHandle } : member,
+      ),
+    [members, myHandle],
+  )
   // The people already on this studio, so they can be added by name with no
   // email and no address. Comes from the roster rather than from past splits:
   // a member who joined but hasn't shipped yet is still someone you can credit.
@@ -257,7 +278,7 @@ export function Publish() {
           description: description.trim() || tagline.trim(),
           tags: tags.length ? tags : ['unsorted'],
           priceUnits: toUnits(priceUsd),
-          splits: members.map(toSplitInput),
+          splits: resolvedMembers.map(toSplitInput),
           build: build.file,
           media: mediaFiles,
           coverMediaIndex: coverIndex,
@@ -484,7 +505,7 @@ export function Publish() {
                   publish nobody can change it, including us.
                 </p>
               </div>
-              <SplitEditor members={members} onChange={setMembers} team={team} />
+              <SplitEditor members={resolvedMembers} onChange={setMembers} team={team} />
             </section>
           ) : (
             <Summary
@@ -495,7 +516,7 @@ export function Publish() {
               coverUrl={media.find((item) => item.id === coverId)?.url}
               mediaCount={media.length}
               priceUsd={priceUsd}
-              members={members}
+              members={resolvedMembers}
               build={build}
             />
           )}

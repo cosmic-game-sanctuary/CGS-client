@@ -83,10 +83,15 @@ export function adaptNotification(wire: WireNotification): AppNotification | nul
   switch (wire.type) {
     case 'sale': {
       const share = num(p, 'shareUsd')
+      // Who bought it, resolved by the server because only that side can tell
+      // an agent's wallet from a person's. Absent for a buyer we do not know,
+      // and for one who has turned their library private. "Someone" is the
+      // honest answer then, and it used to be the answer every time.
+      const buyer = str(p, 'buyerLabel')
       return {
         ...base,
         kind: 'sale',
-        title: `${title} sold`,
+        title: buyer ? `${buyer} bought ${title}` : `${title} sold`,
         // Only claim a share when this person is actually on the splits. A
         // studio owner who credited the work to other people still wants to
         // know it sold, and telling them they earned nothing would be true

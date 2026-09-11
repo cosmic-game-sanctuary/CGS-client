@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { PURCHASE_BEATS } from '@/components/play/beats'
 import { LightsDown } from '@/components/play/LightsDown'
-import { Freehand } from '@/components/icons/Freehand'
+import {
+  FundingBody,
+  GateShell,
+  SignInBody,
+} from '@/components/checkout/AccountGate'
+import { gatePhaseFor } from '@/lib/gate'
 import { Button } from '@/components/ui/Button'
-import { PriceChip } from '@/components/ui/PriceChip'
 import { formatPrice } from '@/lib/format'
-import { cn } from '@/lib/utils'
 import { errorMessage } from '@/lib/api'
 import { buyGame, mountGrant, waitForKey, type AccessGrant } from '@/api/purchase'
 import { useWalletSigner } from '@/auth/useWalletSigner'
@@ -29,11 +32,6 @@ import type { Game } from '@/mocks/types'
  */
 
 type Phase = 'signin' | 'funding' | 'confirm' | 'paying'
-
-/** Top-up options, so nobody has to type an amount. */
-function suggestedTopUp(shortfall: number) {
-  return Math.max(5, Math.ceil(shortfall / 5) * 5)
-}
 
 export function CheckoutOverlay({
   game,
@@ -70,19 +68,13 @@ export function CheckoutOverlay({
   const [problem, setProblem] = useState<string | null>(null)
   const [playUrl, setPlayUrl] = useState<string | null>(null)
 
-  // Compared in integer units, never in dollars. A wallet holding exactly the
-  // price of a game is where a float comparison decides wrong, and getting it
-  // wrong means asking someone to top up a wallet that can already pay.
-  const phase: Phase = paying
-    ? 'paying'
-    : !session.signedIn
-      ? 'signin'
-      : session.balanceUnits < oweUnits
-        ? 'funding'
-        : 'confirm'
+  // The sign-in and funding steps are the shared ladder every money screen
+  // climbs. See AccountGate: the trial uses the same two, with a chunk's price
+  // in place of the game's.
+  const gate = gatePhaseFor(session, oweUnits)
+  const phase: Phase = paying ? 'paying' : gate === 'ready' ? 'confirm' : gate
 
   const timers = useRef<number[]>([])
-  const panelRef = useRef<HTMLDivElement>(null)
 
   const lightsDown = phase === 'paying'
   const dismissable = !lightsDown
@@ -140,10 +132,6 @@ export function CheckoutOverlay({
     }
   }, [])
 
-  useEffect(() => {
-    panelRef.current?.focus()
-  }, [])
-
   // Privy owns the whole login flow, including which methods are offered, so
   // there is nothing to collect here first. The panel moves on by itself when
   // the session changes.
@@ -172,7 +160,6 @@ export function CheckoutOverlay({
   }
 
   const shortfall = Math.max(0, oweUsd - session.balanceUsd)
-  const topUp = suggestedTopUp(shortfall)
 
   return (
     <div
@@ -181,159 +168,85 @@ export function CheckoutOverlay({
       aria-modal="true"
       aria-label={`Buy ${game.title}`}
     >
-      {/* Flat ink scrim — no blur anywhere in this language. §9 */}
-      <button
-        type="button"
-        aria-label="Close checkout"
-        tabIndex={dismissable ? 0 : -1}
-        onClick={() => dismissable && onClose()}
-        className={cn(
-          'absolute inset-0 h-full w-full border-0 bg-ink/45',
-          dismissable ? 'cursor-pointer' : 'cursor-default',
-          // Hidden once the night layer covers it, so the wipe back up reveals
-          // the page rather than a scrim.
-          lightsDown && 'invisible',
-        )}
-      />
+      <GateShell
+        title="checkout"
+        step={
+          phase === 'signin'
+            ? 'Step 1 of 3 · sign in'
+            : phase === 'funding'
+              ? 'Step 2 of 3 · add funds'
+              : 'Step 3 of 3 · confirm'
+        }
+        priceUsd={oweUsd}
+        hidden={lightsDown}
+        dismissable={dismissable}
+        problem={problem}
+        onClose={onClose}
+      >
+        {phase === 'signin' ? (
+          <SignInBody heading="Sign in to buy" onSignIn={handleSignIn} />
+        ) : phase === 'funding' ? (
+          <FundingBody
+            shortfallUsd={shortfall}
+            lines={[
+              { label: 'Balance', value: formatPrice(session.balanceUsd) },
+              { label: game.title, value: formatPrice(game.priceUsd) },
+              ...(creditUsd > 0
+                ? [
+                    {
+                      label: 'Trial credit',
+                      value: `-${formatPrice(creditUsd)}`,
+                      tone: 'green' as const,
+                    },
+                  ]
+                : []),
+            ]}
+            busy={busy}
+            onFund={(amount) => void handleFund(amount)}
+          />
+        ) : (
+          <>
+            <h2 className="text-2xl">{game.title}</h2>
+            <p className="mt-2 font-body text-sm text-ink-soft">
+              by {game.studio.ens ?? game.studio.name}
+            </p>
 
-      {/* The paper panel: sign in, fund, confirm. */}
-      <div className="pointer-events-none absolute inset-0 flex items-center justify-center p-4">
-        <div
-          ref={panelRef}
-          tabIndex={-1}
-          className={cn(
-            'animate-stamp pointer-events-auto w-full max-w-[440px] rounded-card border-[3px] border-ink bg-paper shadow-hard-lg outline-none',
-            lightsDown && 'invisible',
-          )}
-        >
-          <div className="flex items-center justify-between gap-3 border-b-2 border-ink bg-paper-sunk px-5 py-3">
-            <span className="label-micro text-ink-soft">
-              {phase === 'signin'
-                ? 'Step 1 of 3 · sign in'
-                : phase === 'funding'
-                  ? 'Step 2 of 3 · add funds'
-                  : 'Step 3 of 3 · confirm'}
-            </span>
-            <PriceChip usd={oweUsd} size="sm" />
-          </div>
-
-          <div className="px-5 py-5">
-            {phase === 'signin' ? (
-              <>
-                <h2 className="text-2xl">Sign in to buy</h2>
-                <p className="mt-2 font-body text-sm leading-relaxed text-ink-soft">
-                  Email only. We make the wallet for you, so there&rsquo;s no
-                  extension to install and no phrase to write down.
-                </p>
-                <Button
-                  variant="primary"
-                  size="lg"
-                  className="mt-5 w-full"
-                  onClick={handleSignIn}
-                >
-                  Continue with email
-                </Button>
-              </>
-            ) : phase === 'funding' ? (
-              <>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <h2 className="text-2xl">Add funds</h2>
-                    <p className="mt-2 font-body text-sm leading-relaxed text-ink-soft">
-                      Your wallet is {formatPrice(shortfall)} short. Top it up
-                      once and the rest of your buys are one tap.
-                    </p>
-                  </div>
-                  <Freehand
-                    name="money-wallet"
-                    className="h-11 w-11 shrink-0 text-ink"
-                  />
+            <dl className="mt-5 flex flex-col gap-1.5 rounded-card border-2 border-ink bg-paper-sunk px-4 py-3 font-mono text-[13px]">
+              <div className="flex justify-between">
+                <dt className="text-ink-soft">Price</dt>
+                <dd className="tnum">{formatPrice(game.priceUsd)}</dd>
+              </div>
+              {creditUsd > 0 ? (
+                <div className="flex justify-between text-green">
+                  <dt>Trial credit</dt>
+                  <dd className="tnum">-{formatPrice(creditUsd)}</dd>
                 </div>
+              ) : null}
+              <div className="flex justify-between">
+                <dt className="text-ink-soft">Balance after</dt>
+                <dd className="tnum">
+                  {formatPrice(session.balanceUsd - oweUsd)}
+                </dd>
+              </div>
+            </dl>
 
-                <dl className="mt-5 flex flex-col gap-1.5 rounded-card border-2 border-ink bg-paper-sunk px-4 py-3 font-mono text-[13px]">
-                  <div className="flex justify-between">
-                    <dt className="text-ink-soft">Balance</dt>
-                    <dd className="tnum">{formatPrice(session.balanceUsd)}</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="text-ink-soft">{game.title}</dt>
-                    <dd className="tnum">{formatPrice(game.priceUsd)}</dd>
-                  </div>
-                  {creditUsd > 0 ? (
-                    <div className="flex justify-between text-green">
-                      <dt>Trial credit</dt>
-                      <dd className="tnum">-{formatPrice(creditUsd)}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-
-                <Button
-                  variant="go"
-                  size="lg"
-                  className="mt-4 w-full"
-                  disabled={busy}
-                  onClick={() => void handleFund(topUp)}
-                >
-                  {busy ? 'Adding…' : `Add ${formatPrice(topUp)}`}
-                </Button>
-                <p className="mt-3 font-mono text-[11px] text-ink-soft">
-                  Card or bank, handled by our payments partner.
-                </p>
-              </>
-            ) : (
-              <>
-                <h2 className="text-2xl">{game.title}</h2>
-                <p className="mt-2 font-body text-sm text-ink-soft">
-                  by {game.studio.ens ?? game.studio.name}
-                </p>
-
-                <dl className="mt-5 flex flex-col gap-1.5 rounded-card border-2 border-ink bg-paper-sunk px-4 py-3 font-mono text-[13px]">
-                  <div className="flex justify-between">
-                    <dt className="text-ink-soft">Price</dt>
-                    <dd className="tnum">{formatPrice(game.priceUsd)}</dd>
-                  </div>
-                  {creditUsd > 0 ? (
-                    <div className="flex justify-between text-green">
-                      <dt>Trial credit</dt>
-                      <dd className="tnum">-{formatPrice(creditUsd)}</dd>
-                    </div>
-                  ) : null}
-                  <div className="flex justify-between">
-                    <dt className="text-ink-soft">Balance after</dt>
-                    <dd className="tnum">
-                      {formatPrice(session.balanceUsd - oweUsd)}
-                    </dd>
-                  </div>
-                </dl>
-
-                <Button
-                  variant="primary"
-                  size="lg"
-                  className="mt-4 w-full"
-                  disabled={!wallet.ready}
-                  onClick={handlePay}
-                >
-                  {oweUsd === 0
-                    ? 'Get it and play'
-                    : `Pay ${formatPrice(oweUsd)} and play`}
-                </Button>
-                <p className="mt-3 font-mono text-[11px] text-ink-soft">
-                  All sales final. The key is yours to keep.
-                </p>
-              </>
-            )}
-
-            {problem ? (
-              <p
-                role="alert"
-                className="mt-4 rounded-card border-2 border-red bg-paper-sunk px-3.5 py-2.5 font-body text-sm leading-relaxed text-ink"
-              >
-                {problem}
-              </p>
-            ) : null}
-          </div>
-        </div>
-      </div>
+            <Button
+              variant="primary"
+              size="lg"
+              className="mt-4 w-full"
+              disabled={!wallet.ready}
+              onClick={handlePay}
+            >
+              {oweUsd === 0
+                ? 'Get it and play'
+                : `Pay ${formatPrice(oweUsd)} and play`}
+            </Button>
+            <p className="mt-3 font-mono text-[11px] text-ink-soft">
+              All sales final. The key is yours to keep.
+            </p>
+          </>
+        )}
+      </GateShell>
 
       {/* Lights down: the shared store-to-play wipe. §5 */}
       <LightsDown

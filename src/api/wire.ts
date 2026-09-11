@@ -178,6 +178,13 @@ export interface WireStudio {
   createdAt: string
   ownerAddress: string | null
   memberCount: number
+  /**
+   * The signed-in caller's own row in `members`, or null if they are not on
+   * this team (or are not signed in). No one else's userId is on this
+   * response; this is the one exception, and it is only ever the viewer's
+   * own id being handed back to them.
+   */
+  viewerMemberId: string | null
   members: WireStudioMember[]
   games: WireStudioGame[]
 }

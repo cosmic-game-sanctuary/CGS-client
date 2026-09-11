@@ -30,57 +30,43 @@ export function Studio() {
   const [loaded, setLoaded] = useState<{
     id: string
     studio: StudioType | undefined
-    games: Game[]
     members: WireStudioMember[]
     ownerUserId: string | null
+    /** Which row in `members` is the viewer's own. See `TeamRoster`. */
+    viewerMemberId: string | null
+    /**
+     * Every game the studio route knows about, drafts and unlisted included.
+     * The catalog returns only published ones, so this is what says whether
+     * anything the catalog dropped still needs fetching by id.
+     */
+    allGameIds: string[]
+  } | null>(null)
+  // Its own state, keyed on the *resolved* studio id. The two used to be one
+  // effect, and one `.catch` at the end of it covered both: a slow or failed
+  // `listGamesByStudio` rendered "No studio here" for a studio that plainly
+  // existed and whose name had already come back. Which request failed decides
+  // what the page can say, so they are separate requests with separate state.
+  const [catalog, setCatalog] = useState<{
+    studioId: string
+    games: Game[]
+    failed: boolean
   } | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
     getStudio(id, controller.signal)
-      .then(async (profile) => {
-        if (!profile) {
-          setLoaded({
-            id,
-            studio: undefined,
-            games: [],
-            members: [],
-            ownerUserId: null,
-          })
-          return
-        }
-        // The studio route answers by slug too, so the id in the URL may not
-        // be the one games are filtered by. Use the resolved one.
-        const published = await listGamesByStudio(
-          profile.studio.id,
-          controller.signal,
-        )
-
-        // The catalog only returns published games, so unlisting one used to
-        // make it vanish from the page its own studio manages — leaving no way
-        // back to relist it short of a saved link. The studio route knows about
-        // every game, and only shows drafts to people entitled to see them, so
-        // anything it lists that the catalog dropped is fetched by id and
-        // shown with a badge.
-        const live = new Set(published.map((game) => game.id))
-        const hidden = profile.games.filter(
-          (game) => !live.has(game.id) && game.status !== 'removed',
-        )
-        const extra = (
-          await Promise.all(
-            hidden.map((game) =>
-              getGame(game.id, controller.signal).catch(() => undefined),
-            ),
-          )
-        ).filter((game) => game !== undefined)
-
-        const games = [...published, ...extra]
+      .then((profile) => {
         setLoaded({
           id,
-          studio: profile.studio,
-          games,
-          members: profile.members,
-          ownerUserId: profile.ownerUserId,
+          studio: profile?.studio,
+          members: profile?.members ?? [],
+          ownerUserId: profile?.ownerUserId ?? null,
+          viewerMemberId: profile?.viewerMemberId ?? null,
+          allGameIds: (profile?.games ?? [])
+            // `removed` means the storage is gone. Nothing to fetch and
+            // nothing to play, so it is not a game this page is missing.
+            .filter((game) => game.status !== 'removed')
+            .map((game) => game.id),
         })
       })
       .catch(() => {
@@ -88,20 +74,73 @@ export function Studio() {
         setLoaded({
           id,
           studio: undefined,
-          games: [],
           members: [],
           ownerUserId: null,
+          viewerMemberId: null,
+          allGameIds: [],
         })
       })
     return () => controller.abort()
   }, [id])
+
+  // The studio route answers by slug too, so the id in the URL may not be the
+  // one games are filtered by. Keyed on the resolved one.
+  const resolvedId = loaded?.id === id ? loaded.studio?.id : undefined
+  // A joined string, not the array: a fresh array every fetch would tear the
+  // effect below down and re-run it on every render of the page.
+  const knownIds = loaded?.id === id ? loaded.allGameIds.join(',') : ''
+
+  useEffect(() => {
+    if (!resolvedId) return
+    const controller = new AbortController()
+
+    void (async () => {
+      try {
+        const published = await listGamesByStudio(resolvedId, controller.signal)
+
+        // The catalog only returns published games, so unlisting one used to
+        // make it vanish from the page its own studio manages, leaving no way
+        // back to relist it short of a saved link. The studio route knows about
+        // every game, and only shows drafts to people entitled to see them, so
+        // anything it lists that the catalog dropped is fetched by id and shown
+        // with a badge.
+        const live = new Set(published.map((game) => game.id))
+        const extra = (
+          await Promise.all(
+            (knownIds ? knownIds.split(',') : [])
+              .filter((gameId) => !live.has(gameId))
+              .map((gameId) =>
+                getGame(gameId, controller.signal).catch(() => undefined),
+              ),
+          )
+        ).filter((game) => game !== undefined)
+
+        setCatalog({
+          studioId: resolvedId,
+          games: [...published, ...extra],
+          failed: false,
+        })
+      } catch {
+        if (controller.signal.aborted) return
+        // An empty shelf with a note, never "this studio does not exist". The
+        // studio is already on screen by the time this runs.
+        setCatalog({ studioId: resolvedId, games: [], failed: true })
+      }
+    })()
+
+    return () => controller.abort()
+  }, [resolvedId, knownIds])
 
   const ready = loaded?.id === id ? loaded : null
 
   if (!ready) return <StudioLoading />
   if (!ready.studio) return <StudioNotFound />
 
-  const { studio, games, members, ownerUserId } = ready
+  const { studio, members, ownerUserId, viewerMemberId } = ready
+  // Still loading its shelf is not the same as having an empty one, and a
+  // shelf that would not load is a third thing again.
+  const shelf = catalog?.studioId === studio.id ? catalog : null
+  const games = shelf?.games ?? []
 
   // Re-reads the studio after a roster change. Cheap, and it keeps one source
   // of truth rather than patching a list in two places.
@@ -115,14 +154,26 @@ export function Studio() {
               ...was,
               members: profile.members,
               ownerUserId: profile.ownerUserId,
+              viewerMemberId: profile.viewerMemberId,
             },
       )
     })
-  const isMine = session.studioId === studio.id
   // Founder or accepted member. The server refuses the earnings report to
   // anyone else, so the question is answered from the session rather than by
   // fetching and catching a 403 on every stranger who opens the page.
   const onTeam = session.studios.some((s) => s.id === studio.id)
+  // The person the studio belongs to. `session.studioId` used to stand in for
+  // this and means something narrower: the *primary* studio on the session,
+  // which is whichever one `/api/me` picked. Someone on two teams got "my
+  // studio" on one of them and "theirs" on the other, and a founder viewing a
+  // studio they had joined got founder copy on it. This is the only signal
+  // that answers the question, and publishing is founder-only on the server
+  // (game.routes.ts refuses `POST /api/games` to anyone else), so the publish
+  // CTA reads off it rather than off membership.
+  const isFounder = ownerUserId !== null && session.userId === ownerUserId
+  const canManage = session.studios.some(
+    (s) => s.id === studio.id && s.role === 'owner',
+  )
   const credits = studioCredits(games)
   const plays = games.reduce((sum, game) => sum + game.plays, 0)
   const rated = games.filter((game) => game.reviewCount > 0)
@@ -158,7 +209,7 @@ export function Studio() {
 
           <div className="flex flex-wrap items-start justify-between gap-x-10 gap-y-6">
             <div className="min-w-0">
-              {isMine ? (
+              {onTeam ? (
                 <Sticker className="mb-3 -rotate-2">My studio</Sticker>
               ) : null}
               <h1 className="text-[clamp(30px,4.6vw,48px)]">{studio.name}</h1>
@@ -187,13 +238,13 @@ export function Studio() {
             </div>
 
             <dl className="flex shrink-0 flex-wrap gap-x-8 gap-y-3">
-              <Stat label="Games" value={String(games.length)} />
+              <Stat label="Games" value={shelf ? String(games.length) : '—'} />
               <Stat label="Plays" value={compactCount(plays)} />
               <Stat
                 label="Rating"
                 value={rating ? rating.toFixed(1) : 'None'}
               />
-              <Stat label="Since" value={formatDate(since)} />
+              <Stat label="Since" value={shelf ? formatDate(since) : '—'} />
             </dl>
           </div>
         </div>
@@ -204,7 +255,7 @@ export function Studio() {
           <div className="flex min-w-0 flex-col gap-12">
             <section>
               <h2 className="mb-5 text-2xl">
-                {isMine
+                {onTeam
                   ? games.length === 1
                     ? 'Your game'
                     : 'Your games'
@@ -213,7 +264,31 @@ export function Studio() {
                     : 'Their games'}
               </h2>
 
-              {games.length === 0 ? (
+              {shelf === null ? (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(210px,1fr))] gap-5">
+                  {[0, 1, 2, 3].map((i) => (
+                    <GameCardSkeleton key={i} />
+                  ))}
+                </div>
+              ) : shelf.failed ? (
+                /* The shelf would not load, which is a different thing from
+                   an empty one and a very different thing from the studio not
+                   existing. Saying so is what stops one slow request from
+                   erasing a studio that is plainly on the screen above. */
+                <div className="flex flex-col items-start gap-4 rounded-card border-2 border-ink bg-paper-sunk px-7 py-9 shadow-hard md:flex-row md:items-center md:gap-8">
+                  <Freehand
+                    name="alerts-stop-sign"
+                    className="h-20 w-20 shrink-0 text-red"
+                  />
+                  <div>
+                    <h3 className="text-2xl">Their games would not load.</h3>
+                    <p className="mt-2 max-w-[42ch] font-body text-[15px] text-ink">
+                      The studio is here. The list of what they published is
+                      not. Reload and it will most likely turn up.
+                    </p>
+                  </div>
+                </div>
+              ) : games.length === 0 ? (
                 <div className="flex flex-col items-start gap-4 rounded-card border-2 border-ink bg-yellow px-7 py-9 shadow-hard md:flex-row md:items-center md:gap-8">
                   <Freehand
                     name="video-game-controller"
@@ -222,9 +297,11 @@ export function Studio() {
                   <div>
                     <h3 className="text-2xl">Nothing published yet.</h3>
                     <p className="mt-2 max-w-[42ch] font-body text-[15px] text-ink">
-                      {isMine
+                      {isFounder
                         ? 'Your name is claimed. Drop a build in and it’s on the shelf in four steps.'
-                        : 'This studio has claimed its name but hasn’t shipped anything.'}
+                        : onTeam
+                          ? 'The name is claimed. Nothing is on the shelf under it yet.'
+                          : 'This studio has claimed its name but hasn’t shipped anything.'}
                     </p>
                   </div>
                 </div>
@@ -290,18 +367,19 @@ export function Studio() {
               <TeamRoster
                 studioId={studio.id}
                 members={members}
-                canManage={session.studios.some(
-                  (s) => s.id === studio.id && s.role === 'owner',
-                )}
-                isFounder={
-                  ownerUserId !== null && session.userId === ownerUserId
-                }
+                canManage={canManage}
+                isMember={onTeam}
+                isFounder={isFounder}
+                viewerMemberId={viewerMemberId}
                 onChanged={reload}
               />
             ) : null}
 
-            <ButtonLink to="/publish" variant={isMine ? 'primary' : 'neutral'}>
-              {isMine ? 'Publish a game' : 'Publish your own'}
+            <ButtonLink
+              to="/publish"
+              variant={isFounder ? 'primary' : 'neutral'}
+            >
+              {isFounder ? 'Publish a game' : 'Publish your own'}
             </ButtonLink>
           </aside>
         </div>

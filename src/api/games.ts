@@ -101,6 +101,8 @@ export interface StudioProfile {
   /** Every game the studio has, including drafts. Filter by status to taste. */
   games: WireStudioGame[]
   members: WireStudio['members']
+  /** Which row in `members` is the viewer's own, or null. See `WireStudio`. */
+  viewerMemberId: string | null
 }
 
 export async function getStudio(
@@ -117,6 +119,7 @@ export async function getStudio(
     ownerUserId: wire.ownerUserId,
     games: wire.games,
     members: wire.members,
+    viewerMemberId: wire.viewerMemberId,
   }
 }
 

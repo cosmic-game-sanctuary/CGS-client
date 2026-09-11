@@ -50,6 +50,11 @@ export type ApiErrorCode =
   | 'TRIAL_CHUNKS_EXHAUSTED'
   /** A founder can't be removed, demoted, or leave. They transfer instead. */
   | 'IS_FOUNDER'
+  /**
+   * The signed-in account is not the one the invite was sent to. `details`
+   * carries the masked `email` it was sent to.
+   */
+  | 'INVITE_EMAIL_MISMATCH'
   /** A cloud save changed elsewhere since you read it. `details` has both sides. */
   | 'SAVE_CONFLICT'
   | 'RATE_LIMITED'
