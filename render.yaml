@@ -1,0 +1,48 @@
+# Render Blueprint for the CGS storefront.
+#
+# TWO static sites from one build, and the second one is not optional.
+#
+# Uploaded games run in an iframe with `allow-same-origin`, because every
+# engine that touches localStorage or IndexedDB throws on boot without it. On
+# our own origin that would let a stranger's build read the signed-in session.
+# Served from an origin of its own it is same-origin with itself and
+# cross-origin with us, which is the property we actually wanted — the same
+# shape as itch.io's html-classic.itch.zone.
+#
+# So `cgs-builds` serves the identical dist/ from a different hostname, and
+# `VITE_PREVIEW_ORIGIN` on the main site points at it. A configured origin that
+# does not answer is a hard failure by design, so deploy cgs-builds first.
+#
+# Static sites do not consume the workspace's 750 free instance-hours; only the
+# API's web service does.
+# `--include=dev` below: vite is a devDependency and npm omits those when
+# NODE_ENV=production, which some hosts set during the build. Harmless if the
+# host doesn't set it; fatal if it does.
+services:
+  - type: web
+    name: cgs-client
+    runtime: static
+    buildCommand: npm ci --include=dev && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - { key: VITE_API_URL, sync: false }
+      - { key: VITE_PRIVY_APP_ID, sync: false }
+      - { key: VITE_PREVIEW_ORIGIN, sync: false }
+    routes:
+      # react-router owns the paths. Anything that is a real file (assets,
+      # preview-host.html, preview-sw.js) is served before this applies.
+      - { type: rewrite, source: /*, destination: /index.html }
+
+  - type: web
+    name: cgs-builds
+    runtime: static
+    buildCommand: npm ci --include=dev && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      # Intentionally not given VITE_PREVIEW_ORIGIN. This deploy only has to
+      # serve preview-host.html and preview-sw.js; pointing it at itself would
+      # be a loop, and nobody browses the store from this hostname.
+      - { key: VITE_API_URL, sync: false }
+      - { key: VITE_PRIVY_APP_ID, sync: false }
+    routes:
+      - { type: rewrite, source: /*, destination: /index.html }
