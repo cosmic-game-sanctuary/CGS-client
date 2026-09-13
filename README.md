@@ -1,13 +1,54 @@
 # CGS-client
 
-The storefront, the player and the upload flow for
-**[Cosmic Game Sanctuary](https://github.com/cosmic-game-sanctuary/CGS-docs)** —
+The storefront, the player and the upload flow for **Cosmic Game Sanctuary** —
 an indie game store where an agent can buy on your behalf, revenue splits pay a
 whole team atomically, and trials are metered by the minute.
 
-📺 **[Four-minute demo](https://youtu.be/WyJehf7Vgb4)** · 📖 [How it all works](https://github.com/cosmic-game-sanctuary/CGS-docs/blob/main/ARCHITECTURE.md) · 🔌 [API contract](https://github.com/cosmic-game-sanctuary/CGS-docs/blob/main/INTEGRATION.md)
+Three repos, not a monorepo: **client** (here — the storefront, player and
+upload flow), [**CGS-docs**](https://github.com/cosmic-game-sanctuary/CGS-docs)
+(the pitch, the architecture writeup, the API contract), and
+[**CGS-server**](https://github.com/cosmic-game-sanctuary/CGS-server) (the API,
+chain integration, the agent).
+
+📺 **[Full demo](https://youtu.be/WyJehf7Vgb4)** · 📖 [How it all works](https://github.com/cosmic-game-sanctuary/CGS-docs/blob/main/ARCHITECTURE.md) · 🔌 [API contract](https://github.com/cosmic-game-sanctuary/CGS-docs/blob/main/INTEGRATION.md)
 
 Built for ETHOnline 2026. React 19 + Vite + Tailwind v4.
+
+---
+
+## What's built
+
+Real, tested end to end against the live API on Hedera testnet, Sepolia and
+Groq. Nothing below is a mock.
+
+**Buy and play.** Browse with no login, sign in with just an email, buy, and
+the game boots in the same tab a few seconds later. The build is pinned to
+IPFS and unpacked live in the browser, no gateway, no install.
+
+**Try before you buy.** Play a game by the minute, metered automatically from
+your own wallet over x402. Every cent already spent trying it comes off the
+price if you buy.
+
+**Publish and split.** Drop a zip and watch it run before it's even
+published. Split revenue with a team by email — a teammate who has never
+touched a wallet is on the credits and gets paid the moment they accept, and
+the split locks at publish with no edit affordance anywhere in the app.
+
+**The agent.** Set a want and a ceiling on a game's own listing, fund its
+wallet, and walk away. `/agent` shows its balance, every want, and a full
+decision feed. It watches a public Hedera topic, decides at the last
+responsible moment before a sale ends, and calls a model only when the
+choice is genuinely contested.
+
+**Everything about you, behind the profile menu.** `/library` (keys you
+hold, plus what you're waiting on), `/money` (what you earned, what's still
+owed, and a withdrawal signed in the tab), your studio page (team, ENS name,
+credits). Three pages, one action, the wallet inline — no settings page,
+because there's nothing else to configure.
+
+Plus the ordinary storefront underneath: verified-purchase reviews with
+developer replies, public profiles, sales with a checkable countdown,
+moderation, and a notification panel wired to real events, not a route.
 
 ---
 
