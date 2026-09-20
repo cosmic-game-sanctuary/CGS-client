@@ -10,7 +10,7 @@ upload flow), [**CGS-docs**](https://github.com/cosmic-game-sanctuary/CGS-docs)
 [**CGS-server**](https://github.com/cosmic-game-sanctuary/CGS-server) (the API,
 chain integration, the agent).
 
-📺 **[Full demo](https://youtu.be/WyJehf7Vgb4)** · 📖 [How it all works](https://github.com/cosmic-game-sanctuary/CGS-docs/blob/main/ARCHITECTURE.md) · 🔌 [API contract](https://github.com/cosmic-game-sanctuary/CGS-docs/blob/main/INTEGRATION.md)
+**[Full demo](https://youtu.be/WyJehf7Vgb4)** · [How it all works](https://github.com/cosmic-game-sanctuary/CGS-docs/blob/main/ARCHITECTURE.md) · [API contract](https://github.com/cosmic-game-sanctuary/CGS-docs/blob/main/INTEGRATION.md) · [Submission](https://ethglobal.com/showcase/cosmicgamesanctuary-da0gn)
 
 Built for ETHOnline 2026. React 19 + Vite + Tailwind v4.
 
