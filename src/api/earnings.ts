@@ -41,23 +41,33 @@ export interface WireEarningsGame {
 }
 
 /**
- * A share that was owed and did not go out.
+ * Your share of one game's sales, as that game's vault holds it.
  *
- * `held` means the person had no Hedera account to send it to. `failed` means
- * the transfer was attempted and the network refused it. Neither loses the
- * money: the row is the record that it is owed.
+ * Replaces the held/failed rows the Hedera build needed. There used to be three
+ * states a share could be in — paid, held because the person had no account yet,
+ * or failed — and all three existed because the server moved the money. It does
+ * not any more: a sale credits the game's SplitVault directly and the contract
+ * divides it, so a share is either still in the vault (`claimable`) or already
+ * withdrawn (`claimed`). Nothing can get stuck, and there is no state where
+ * someone is owed a transfer that failed.
+ *
+ * Every figure here is read from the contract, so it is what the chain will
+ * actually pay and can be checked on the explorer.
  */
-export interface WireOwedRow {
-  id: string
+export interface WireGameClaim {
   gameId: string
-  gameTitle: string | null
-  gameSlug: string | null
-  amount: WireMoney
-  amountUnits: number
-  asset: string
-  reason: string
-  since: string
-  status: 'held' | 'failed'
+  gameTitle: string
+  gameSlug: string
+  /** The contract holding it. Checkable on the explorer. */
+  vault: string
+  /** Your share of each sale, in basis points. 10000 is the whole sale. */
+  bps: number
+  /** Everything this game has ever owed you. */
+  earned: WireMoney
+  /** What you have already taken out. */
+  claimed: WireMoney
+  /** What is waiting for you right now. */
+  claimable: WireMoney
 }
 
 export interface WirePersonalEarnings {
@@ -68,13 +78,15 @@ export interface WirePersonalEarnings {
     gross: WireMoney
     sales: number
     games: number
-    held: WireMoney
-    failed: WireMoney
+    /** Sitting in vaults with your name on it. Claim it to move it. */
+    claimable: WireMoney
+    /** Already withdrawn from the vaults. */
+    claimed: WireMoney
     asset: string
   }
   games: WireEarningsGame[]
-  held: WireOwedRow[]
-  failed: WireOwedRow[]
+  /** One per game that pays you, newest-claimable first. */
+  claims: WireGameClaim[]
 }
 
 /**
@@ -96,8 +108,10 @@ export interface WireStudioPerson {
   earnedUnits: number
   games: number
   /**
-   * False while this share is still pointed at an invite nobody has opened.
-   * That person's money is in `held` rather than in their wallet.
+   * Always true now, and kept only so this shape does not change under you.
+   * It used to mean "has an address, so their share can be paid"; every payee
+   * has an address from the moment they are invited, because one is generated
+   * for them then and the game's vault names it permanently at publish.
    */
   claimed: boolean
   earned: WireMoney
@@ -110,15 +124,11 @@ export interface WireStudioEarnings {
     sales: number
     games: number
     published: number
-    held: WireMoney
-    failed: WireMoney
     asset: string
   }
   games: WireEarningsGame[]
   /** Everyone on the studio's splits, whether or not they have an account. */
   people: WireStudioPerson[]
-  held: WireOwedRow[]
-  failed: WireOwedRow[]
 }
 
 /**
@@ -133,4 +143,32 @@ export function getStudioEarnings(
   return request<WireStudioEarnings>(`/api/studios/${studioId}/earnings`, {
     signal,
   })
+}
+
+/** What a claim moved, and the transaction that moved it. */
+export interface WireClaimResult {
+  gameId: string
+  gameTitle: string
+  vault: string
+  /** Where it went — your own address, and the only place it could have gone. */
+  to: string
+  amount: WireMoney
+  txHash: string
+}
+
+/**
+ * Take your share of one game's sales out of its vault.
+ *
+ * The platform pays the gas for this, which is necessity rather than generosity:
+ * gas on Arc is USDC, so a developer whose first earnings are still in the vault
+ * cannot afford the transaction that would release them. `SplitVault.claimFor`
+ * sends only to the payee, so paying for it buys nobody any say over the money —
+ * and it is callable by anyone, so a developer who would rather not involve us
+ * can call `claim()` from their own wallet instead.
+ *
+ * Answers `409 NOTHING_TO_CLAIM` when there is nothing waiting, which is an
+ * ordinary outcome rather than an error worth alarming anyone about.
+ */
+export function claimEarnings(gameId: string): Promise<WireClaimResult> {
+  return request<WireClaimResult>(`/api/me/claim/${gameId}`, { method: 'POST' })
 }

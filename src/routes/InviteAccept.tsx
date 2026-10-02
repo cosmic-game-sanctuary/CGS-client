@@ -311,18 +311,17 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * What accepting released.
+ * What was already yours before you accepted.
  *
- * The transfers go out after the accept responds, so the first read of the
- * earnings report usually still counts the money as held. Read twice: once now
- * for whatever was already settled, once after the transfers have had time to
- * land.
+ * Nothing was ever waiting on this accept, and that is the point worth making
+ * here rather than hiding. A share is credited to a payout address generated
+ * when the invite was written, and each game's vault names that address
+ * permanently at publish, so sales have been accruing whether or not anyone
+ * opened the email. Accepting links the share to an account you can sign into;
+ * it does not release anything.
  *
- * Held money needs no button and shouldn't get one. A share is now paid to the
- * collaborator's EVM alias directly, and under HIP-542 that payment creates
- * their Hedera account as a side effect, so "held" means exactly one thing:
- * the invite had not been accepted. Accepting is what you just did, which is
- * why anything still held here is in flight rather than stuck.
+ * Read twice, eight seconds apart, because the accept backfills split rows after
+ * it responds and the first read can land before that finishes.
  */
 function WhatWasWaiting() {
   const [report, setReport] = useState<WirePersonalEarnings | null>(null)
@@ -348,16 +347,16 @@ function WhatWasWaiting() {
   if (report === null) return null
 
   const earned = report.totals.earned.display
-  const held = report.totals.held.display
+  const claimable = report.totals.claimable.display
 
   return (
     <section className="mt-8 rounded-card border-2 border-ink bg-paper p-5 shadow-hard">
-      <span className="label-micro text-ink-soft">What was waiting</span>
+      <span className="label-micro text-ink-soft">What is already yours</span>
 
-      {earned === 0 && held === 0 ? (
+      {earned === 0 && claimable === 0 ? (
         <p className="mt-2 max-w-[48ch] font-body text-[15px] leading-relaxed">
-          Nothing has sold yet. When it does, your share arrives without anyone
-          having to send it.
+          Nothing has sold yet. When it does, your share goes straight into the
+          contract that splits that game's sales.
         </p>
       ) : (
         <>
@@ -370,11 +369,11 @@ function WhatWasWaiting() {
         </>
       )}
 
-      {held > 0 ? (
+      {claimable > 0 ? (
         <p className="mt-4 border-t-2 border-ink pt-3 font-body text-[15px] leading-relaxed">
-          <b className="font-mono tnum">{formatAmount(held)}</b> of that is on
-          its way now. It was held while the invite was unclaimed, and accepting
-          released it. There is nothing to claim.
+          <b className="font-mono tnum">{formatAmount(claimable)}</b> of that is
+          waiting for you to claim it. It has been yours since the sale, and it
+          was never ours to hold.
         </p>
       ) : null}
 

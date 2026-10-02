@@ -57,16 +57,22 @@ export function PriceHistory({
               <span className="font-mono text-[11px] text-ink-soft">
                 {formatDate(point.at)}
               </span>
-              {point.hcsTxId ? (
-                <span
-                  className="ml-auto min-w-0 truncate font-mono text-[11px] text-ink-faint"
-                  title={point.hcsTxId}
+              {point.chainTxHash && point.explorerUrl ? (
+                // A link rather than text, because the whole reason this hash is
+                // stored is that someone who distrusts this table can go and
+                // check it. Making them copy-paste it was hiding the feature.
+                <a
+                  href={point.explorerUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="ml-auto min-w-0 truncate font-mono text-[11px] text-ink-faint underline decoration-dotted hover:text-ink"
+                  title={`${point.chainTxHash} — open on the block explorer`}
                 >
-                  {point.hcsTxId}
-                </span>
+                  {point.chainTxHash}
+                </a>
               ) : (
                 <span className="ml-auto font-mono text-[11px] text-ink-faint">
-                  not announced
+                  not recorded on chain
                 </span>
               )}
             </li>

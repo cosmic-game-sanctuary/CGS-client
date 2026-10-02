@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useState, type CSSProperties } from 'react'
 import { Link } from 'react-router-dom'
 import { Freehand } from '@/components/icons/Freehand'
 import { SiteFooter } from '@/components/SiteFooter'
@@ -6,12 +6,13 @@ import { SiteHeader } from '@/components/SiteHeader'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { WithdrawPanel } from '@/components/money/WithdrawPanel'
 import {
+  claimEarnings,
   getMyEarnings,
-  type WireOwedRow,
+  type WireGameClaim,
   type WirePersonalEarnings,
 } from '@/api/earnings'
 import { errorMessage } from '@/lib/api'
-import { formatAmount, formatDate } from '@/lib/format'
+import { formatAmount } from '@/lib/format'
 import { signIn, useSession } from '@/auth/session'
 
 /**
@@ -42,6 +43,12 @@ export function Money() {
   } | null>(null)
 
   const userId = session.userId
+  // Bumped after a claim, to refetch. The claimable figures are read from each
+  // game's vault, so a successful claim makes every one of them stale at once —
+  // patching the row locally would leave the headline totals disagreeing with
+  // the contract.
+  const [refresh, setRefresh] = useState(0)
+  const reload = useCallback(() => setRefresh((n) => n + 1), [])
 
   useEffect(() => {
     if (!userId) return
@@ -53,9 +60,9 @@ export function Money() {
         setLoaded({ userId, report: null, error: errorMessage(error) })
       })
     return () => controller.abort()
-    // `balanceUnits` moves when a payout lands, which is the cheapest signal
-    // that these figures are out of date.
-  }, [userId, session.balanceUnits])
+    // `balanceUnits` moves when money reaches the wallet, which is the cheapest
+    // signal that these figures are out of date.
+  }, [userId, session.balanceUnits, refresh])
 
   const current = loaded?.userId === userId ? loaded : null
 
@@ -66,8 +73,9 @@ export function Money() {
       <main className="mx-auto w-full max-w-page flex-1 px-6 py-9">
         <h1 className="text-[clamp(30px,4.4vw,44px)]">My money</h1>
         <p className="mt-2 max-w-[54ch] font-body text-ink-soft">
-          Your share of every sale reaches your wallet as the sale settles.
-          Nobody has to approve it, and nothing is held back.
+          Your share of every sale lands in a contract that splits it, not in
+          an account of ours. Nobody has to approve it; claim it whenever you
+          like.
         </p>
 
         {!session.signedIn ? (
@@ -136,7 +144,7 @@ export function Money() {
                 </p>
               </div>
             ) : current.report === null ? null : (
-              <Report report={current.report} />
+              <Report report={current.report} onClaimed={reload} />
             )}
 
             <WithdrawPanel />
@@ -149,34 +157,23 @@ export function Money() {
   )
 }
 
-function Report({ report }: { report: WirePersonalEarnings }) {
-  const { totals, games, held, failed } = report
+function Report({
+  report,
+  onClaimed,
+}: {
+  report: WirePersonalEarnings
+  onClaimed: () => void
+}) {
+  const { totals, games, claims } = report
+  const withMoney = claims.filter((c) => c.claimable.units > 0)
 
   return (
     <>
-      {held.length > 0 ? (
-        <Owed
-          rows={held}
-          total={totals.held.display}
-          title="On its way to you"
-          // "Held" now means one thing only: an invite that had not been
-          // accepted. A share is paid to the EVM alias directly and HIP-542
-          // makes that payment create the account, so nothing waits on a wallet
-          // having been used before. Nothing to press, and nothing to explain.
-          note="This settles by itself, without anyone pressing anything."
-          tone="yellow"
-        />
-      ) : null}
-
-      {failed.length > 0 ? (
-        <Owed
-          rows={failed}
-          total={totals.failed.display}
-          title="Did not go through"
-          // Never "try again": there is nothing on this screen a person could
-          // press that would help, and pretending otherwise wastes their time.
-          note="Still owed, and still recorded. Someone on our side has to send it by hand."
-          tone="red"
+      {withMoney.length > 0 ? (
+        <Claimable
+          rows={withMoney}
+          total={totals.claimable.display}
+          onClaimed={onClaimed}
         />
       ) : null}
 
@@ -263,53 +260,102 @@ function Report({ report }: { report: WirePersonalEarnings }) {
  * component and differ only in the sentence, which is the part that actually
  * tells them apart.
  */
-function Owed({
+/**
+ * Money a game's vault is holding for you, and the button that moves it.
+ *
+ * Replaces two sections that no longer describe anything real — "on its way to
+ * you" and "did not go through". Both existed because the server used to perform
+ * the payout, so a share could be in transit or could have failed. It does not
+ * any more: a sale credits the game's vault directly and the contract divides
+ * it, so your share is simply sitting there with your name on it until you ask
+ * for it. Nothing is in flight and nothing can fail on its own.
+ *
+ * Per game rather than one button for everything, because each game has its own
+ * vault and each claim is its own transaction. Pretending otherwise would mean a
+ * single button that half-succeeds.
+ */
+function Claimable({
   rows,
   total,
-  title,
-  note,
-  tone,
+  onClaimed,
 }: {
-  rows: WireOwedRow[]
+  rows: WireGameClaim[]
   total: number
-  title: string
-  note: string
-  tone: 'yellow' | 'red'
+  onClaimed: () => void
 }) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [done, setDone] = useState<Record<string, string>>({})
+  const [failed, setFailed] = useState<Record<string, string>>({})
+
+  async function claim(row: WireGameClaim) {
+    setBusy(row.gameId)
+    // Clear any previous failure for this row, so a retry does not show the old
+    // error next to a spinner.
+    setFailed((f) => Object.fromEntries(Object.entries(f).filter(([id]) => id !== row.gameId)))
+    try {
+      const result = await claimEarnings(row.gameId)
+      setDone((d) => ({ ...d, [row.gameId]: result.txHash }))
+      // Refetched rather than patched locally: the numbers on this screen are
+      // read from the contract, and the contract is what just changed.
+      onClaimed()
+    } catch (err) {
+      setFailed((f) => ({ ...f, [row.gameId]: errorMessage(err) }))
+    } finally {
+      setBusy(null)
+    }
+  }
+
   return (
-    <section
-      className={`mt-6 rounded-card border-2 border-ink px-5 py-4 ${
-        tone === 'yellow' ? 'bg-yellow' : 'border-l-8 border-l-red bg-paper-sunk'
-      }`}
-    >
+    <section className="mt-6 rounded-card border-2 border-ink bg-yellow px-5 py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 className="text-xl">{title}</h2>
+        <h2 className="text-xl">Yours to claim</h2>
         <span className="tnum font-mono text-lg font-bold">
           {formatAmount(total)}
         </span>
       </div>
       <p className="mt-1.5 max-w-[54ch] font-body text-[14px] leading-relaxed text-ink-soft">
-        {note}
+        Each game's sales go straight into a contract that splits them. This is
+        your share, sitting there until you ask for it. We pay the network fee,
+        and the money can only go to your own wallet.
       </p>
-      <ul className="mt-3 flex list-none flex-col gap-1 border-t-2 border-ink p-0 pt-2.5 font-mono text-[12px]">
+      <ul className="mt-3 flex list-none flex-col gap-2 border-t-2 border-ink p-0 pt-2.5">
         {rows.map((row) => (
-          <li key={row.id} className="flex flex-wrap justify-between gap-x-4">
+          <li
+            key={row.gameId}
+            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 font-mono text-[12px]"
+          >
             <span className="min-w-0 truncate">
-              {row.gameSlug ? (
-                <Link
-                  to={`/game/${row.gameSlug}`}
-                  className="text-ink no-underline hover:underline"
-                >
-                  {row.gameTitle ?? 'A game'}
-                </Link>
+              <Link
+                to={`/game/${row.gameSlug}`}
+                className="text-ink no-underline hover:underline"
+              >
+                {row.gameTitle}
+              </Link>
+              <span className="text-ink-soft">
+                {' '}
+                · {(row.bps / 100).toFixed(row.bps % 100 === 0 ? 0 : 2)}% of each sale
+              </span>
+            </span>
+            <span className="flex shrink-0 items-center gap-3">
+              <span className="tnum font-bold">
+                {formatAmount(row.claimable.display)}
+              </span>
+              {done[row.gameId] ? (
+                <span className="text-green">claimed</span>
               ) : (
-                (row.gameTitle ?? 'A game')
+                <Button
+                  variant="neutral"
+                  size="sm"
+                  onClick={() => void claim(row)}
+                  disabled={busy !== null}
+                >
+                  {busy === row.gameId ? 'Claiming…' : 'Claim'}
+                </Button>
               )}
-              <span className="text-ink-soft"> · since {formatDate(row.since)}</span>
             </span>
-            <span className="tnum shrink-0 font-bold">
-              {formatAmount(row.amount.display)}
-            </span>
+            {failed[row.gameId] ? (
+              <span className="w-full text-red">{failed[row.gameId]}</span>
+            ) : null}
           </li>
         ))}
       </ul>

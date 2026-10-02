@@ -22,8 +22,8 @@ export interface WireBuildVersion {
   notes: string | null
   buildCid: string
   buildSizeKb: number | null
-  /** The HCS message that announced it, when there was one. */
-  hcsTxId: string | null
+  /** The transaction that recorded it on GameRegistry, when there was one. */
+  chainTxHash: string | null
   createdAt: string
 }
 
@@ -37,11 +37,12 @@ export interface WirePricePoint {
   toUnits: number
   asset: string
   /**
-   * The transaction that announced this change publicly. What makes a price
-   * history checkable on the Mirror Node rather than a claim we make.
+   * The transaction that recorded this change publicly. What makes a price
+   * history checkable on the block explorer rather than a claim we make.
    */
-  hcsTxId: string | null
-  topicId: string | null
+  chainTxHash: string | null
+  /** Where to look it up. Null when the change was never recorded on chain. */
+  explorerUrl: string | null
   at: string
 }
 

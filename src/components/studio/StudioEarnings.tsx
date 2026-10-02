@@ -11,10 +11,10 @@ import { formatAmount } from '@/lib/format'
  * own takings is not a team. Nobody outside the studio sees any of it, which
  * the server enforces; this component is simply not rendered for them.
  *
- * The people list is the part that earns its place. Everywhere else in the app
- * a split is a percentage; here it is an amount, next to whether that person
- * has claimed the invite it is waiting behind. That is what turns "someone
- * hasn't accepted yet" from a status into a number somebody will chase.
+ * The people list is the part that earns its place. Everywhere else in the app a
+ * split is a percentage; here it is an amount. Each person's share accrues in
+ * the game's vault from the first sale whether or not they have ever signed in,
+ * so this is what they have made rather than what they are waiting for.
  *
  * Handles, not names, because a handle is the identity on a split and the only
  * one a collaborator without an account has at all.
@@ -47,7 +47,6 @@ export function StudioEarnings({ studioId }: { studioId: string }) {
   if (current.report === null) return null
 
   const { totals, people, games } = current.report
-  const unclaimed = people.filter((person) => !person.claimed)
 
   return (
     <section>
@@ -67,23 +66,13 @@ export function StudioEarnings({ studioId }: { studioId: string }) {
         />
       </div>
 
-      {totals.held.units > 0 ? (
-        <p className="mt-4 rounded-card border-2 border-ink bg-yellow px-4 py-3 font-body text-[15px] leading-relaxed">
-          <b className="font-mono tnum">{formatAmount(totals.held.display)}</b>{' '}
-          is waiting on{' '}
-          {unclaimed.length === 1
-            ? `${unclaimed[0]?.handle ?? 'someone'} claiming their invite`
-            : 'people who have not claimed their invites'}
-          . It goes out the moment they do.
-        </p>
-      ) : null}
-
-      {totals.failed.units > 0 ? (
-        <p className="mt-4 rounded-card border-2 border-l-8 border-ink border-l-red bg-paper-sunk px-4 py-3 font-body text-[15px] leading-relaxed">
-          <b className="font-mono tnum">{formatAmount(totals.failed.display)}</b>{' '}
-          of a payout did not go through. It is still owed and still recorded.
-        </p>
-      ) : null}
+      {/*
+        Two notices used to live here — money waiting on an unaccepted invite,
+        and a payout that failed. Neither can happen now. A game's sales go into
+        a contract that divides them between addresses fixed at publish, so a
+        share is never in transit and never needs anyone to accept anything
+        before it can accrue. Each person claims their own from their own page.
+      */}
 
       <h3 className="mt-8 text-xl">Who earned what</h3>
       <ul className="print-rows mt-3 flex list-none flex-col gap-2 p-0">
@@ -100,7 +89,6 @@ export function StudioEarnings({ studioId }: { studioId: string }) {
               <span className="block truncate font-mono text-[11px] text-ink-soft">
                 {person.role} · {person.games}{' '}
                 {person.games === 1 ? 'game' : 'games'}
-                {person.claimed ? '' : ' · has not claimed their invite'}
               </span>
             </span>
             <span className="tnum shrink-0 font-mono text-[15px] font-bold">
