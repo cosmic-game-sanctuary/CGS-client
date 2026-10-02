@@ -14,7 +14,7 @@ import { buildPathFor, mountBuildFromPath, buyGame } from '@/api/purchase'
 import { buyChunk, getTrial, type WireTrial } from '@/api/trials'
 import { ApiError, errorMessage } from '@/lib/api'
 import { fund, signIn, useSession } from '@/auth/session'
-import { useWalletSigner } from '@/auth/useWalletSigner'
+import { useWalletSigner, type TypedDataRequest } from '@/auth/useWalletSigner'
 import type { Beat } from '@/components/play/beats'
 import type { Game } from '@/mocks/types'
 
@@ -289,7 +289,7 @@ function RunningTrial({
   const meter = useMeteredPlay({
     gameId: game.id,
     trial,
-    signHashes: signer.signHashes,
+    signTypedData: signer.signTypedData,
     expiresAt,
     chunksLeft: status.chunksLeft,
     stopped: owned,
@@ -325,7 +325,7 @@ function RunningTrial({
         label: `Buying ${trial.chunkMinutes} minutes`,
         ms: 750,
         work: async () => {
-          const bought = await buyChunk(game.id, signer.signHashes)
+          const bought = await buyChunk(game.id, signer.signTypedData)
           held.minutes = bought.chunkMinutes || trial.chunkMinutes
         },
       },
@@ -424,7 +424,7 @@ function worthRetrying(error: unknown): boolean {
 function useMeteredPlay({
   gameId,
   trial,
-  signHashes,
+  signTypedData,
   expiresAt,
   chunksLeft,
   stopped,
@@ -432,7 +432,7 @@ function useMeteredPlay({
 }: {
   gameId: string
   trial: WireTrial
-  signHashes: (h: string[]) => Promise<{ hash: string; signature: string }[]>
+  signTypedData: (request: TypedDataRequest) => Promise<string>
   expiresAt: string | null
   chunksLeft: number
   stopped: boolean
@@ -488,7 +488,7 @@ function useMeteredPlay({
         }
         if (new Date(exp).getTime() - Date.now() <= TOP_UP_AT_MS) {
           try {
-            const bought = await buyChunk(gameId, signHashes)
+            const bought = await buyChunk(gameId, signTypedData)
             if (stop) return
             attempt = 0
             setError(null)
@@ -516,7 +516,7 @@ function useMeteredPlay({
       stop = true
       if (timer !== undefined) window.clearTimeout(timer)
     }
-  }, [running, gameId, signHashes, trial.chunkMinutes])
+  }, [running, gameId, signTypedData, trial.chunkMinutes])
 
   const retry = useCallback(() => {
     setError(null)
@@ -678,7 +678,7 @@ function TrialOver({
     try {
       // The ordinary purchase. `/download` subtracts what the trial already
       // paid, so this charges the difference with nothing here doing sums.
-      await buyGame(game.id, signer.signHashes)
+      await buyGame(game.id, signer.signTypedData)
       onBought()
     } catch (error) {
       setProblem(errorMessage(error))

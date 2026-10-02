@@ -1,4 +1,5 @@
 import { request } from '@/lib/api'
+import type { TypedDataRequest } from '@/auth/useWalletSigner'
 
 /**
  * Paid trials: chunks of play that come off the price if you buy.
@@ -63,10 +64,12 @@ export function getTrial(
 
 interface PreparedChunk {
   intentId: string
-  hashes: string[]
+  /** The EIP-3009 authorization to sign. Pass it to the wallet whole. */
+  typedData: TypedDataRequest
   expiresAt: string
   amountUnits: string
   asset: string
+  payTo: string
 }
 
 type PrepareChunkResponse =
@@ -75,7 +78,7 @@ type PrepareChunkResponse =
 
 export interface ChunkBought {
   chunkMinutes: number
-  /** Look it up on the Mirror Node. A chunk is a real payment, like any other. */
+  /** Look it up on the explorer. A chunk is a real payment, like any other. */
   settlementTxId: string
 }
 
@@ -89,11 +92,11 @@ export function prepareChunk(gameId: string): Promise<PrepareChunkResponse> {
 export function completeChunk(
   gameId: string,
   intentId: string,
-  signatures: { hash: string; signature: string }[],
+  signature: string,
 ): Promise<ChunkBought> {
   return request<ChunkBought>(`/api/games/${gameId}/trial/chunks/complete`, {
     method: 'POST',
-    body: { intentId, signatures },
+    body: { intentId, signature },
   })
 }
 
@@ -110,15 +113,13 @@ export function completeChunk(
  */
 export async function buyChunk(
   gameId: string,
-  signHashes: (
-    hashes: string[],
-  ) => Promise<{ hash: string; signature: string }[]>,
+  signTypedData: (request: TypedDataRequest) => Promise<string>,
 ): Promise<ChunkBought> {
   const prepared = await prepareChunk(gameId)
   if (prepared.status === 'granted') {
     // Not a path the server takes today: a chunk is always priced above zero.
     return { chunkMinutes: 0, settlementTxId: '' }
   }
-  const signatures = await signHashes(prepared.hashes)
-  return completeChunk(gameId, prepared.intentId, signatures)
+  const signature = await signTypedData(prepared.typedData)
+  return completeChunk(gameId, prepared.intentId, signature)
 }

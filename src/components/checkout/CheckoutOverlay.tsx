@@ -90,7 +90,7 @@ export function CheckoutOverlay({
       // The beat waits on this, so "Paying" lasts exactly as long as paying
       // does, and the shutter cannot come up on a game nobody bought.
       pay: async () => {
-        held.grant = await buyGame(game.id, wallet.signHashes)
+        held.grant = await buyGame(game.id, wallet.signTypedData)
       },
       // Settlement has happened, so the buyer owns this whether or not the key
       // has minted. Say so locally now; the poll replaces it with the server's
@@ -104,7 +104,7 @@ export function CheckoutOverlay({
         setPlayUrl(await mountGrant(held.grant, report))
       },
     })
-  }, [game.id, wallet.signHashes])
+  }, [game.id, wallet.signTypedData])
 
   // Clear any in-flight beat timers if the overlay goes away mid-sequence.
   useEffect(() => {

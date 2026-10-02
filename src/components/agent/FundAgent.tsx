@@ -78,7 +78,7 @@ export function FundAgent({
             Math.round(typed * 10 ** session.assetDecimals),
           ),
         },
-        signer.signHashes,
+        signer.sendTransaction,
       )
       setSent(result.transactionId)
       setLanding(true)

@@ -1,16 +1,20 @@
 import { ApiError, request, requestBytes } from '@/lib/api'
 import { mountBuild, type MountStage } from '@/lib/buildPreview'
+import type { TypedDataRequest } from '@/auth/useWalletSigner'
 
 /**
  * Buying a game, and getting at the build afterwards.
  *
  * The one flow in this app that isn't ordinary REST. `GET /download` is x402
  * gated: it answers 402 with payment terms instead of the file, and you retry
- * having paid. The server does that retry for us, because the terms have to be
- * signed with a Hedera transaction and nothing here should be building one.
+ * having paid. The server does that retry for us.
  *
  * What this side does is the one step the server cannot: signing with the
  * buyer's own wallet. See `auth/useWalletSigner.ts` for why that split exists.
+ *
+ * **The buyer pays no network fee.** Circle's facilitator submits the transfer
+ * and covers the gas, so a wallet holding exactly the price of a game can buy
+ * that game.
  */
 
 /** What you get once you're entitled to the build. */
@@ -33,11 +37,16 @@ export interface AccessGrant {
 /** A built, unsigned payment waiting on the wallet. */
 export interface PreparedPayment {
   intentId: string
-  /** Sign every one. Order doesn't matter, the server matches on the hash. */
-  hashes: string[]
+  /**
+   * The EIP-3009 authorization to sign, as EIP-712 typed data. Pass it to the
+   * wallet whole — see `auth/useWalletSigner.ts`.
+   */
+  typedData: TypedDataRequest
   expiresAt: string
   amountUnits: string
   asset: string
+  /** Where the money goes: the game's own SplitVault. */
+  payTo: string
 }
 
 type PrepareResponse =
@@ -72,11 +81,11 @@ export function preparePayment(gameId: string): Promise<PrepareResponse> {
 export function completePayment(
   gameId: string,
   intentId: string,
-  signatures: { hash: string; signature: string }[],
+  signature: string,
 ): Promise<AccessGrant> {
   return request<AccessGrant>(`/api/games/${gameId}/pay/complete`, {
     method: 'POST',
-    body: { intentId, signatures },
+    body: { intentId, signature },
   })
 }
 
@@ -84,26 +93,28 @@ export function completePayment(
  * Pay for a game and come back with somewhere to play it.
  *
  * Three steps, and the middle one is the only reason this isn't a single call:
- * prepare builds the transfer, the wallet signs it, complete settles it.
+ * prepare quotes the price, the wallet signs the authorization, complete
+ * settles it.
  *
- * The retry is for one specific failure. A prepared payment is a frozen Hedera
- * transaction, and those expire about two minutes after they're built, so a
- * buyer who leaves the tab mid-purchase comes back to a payment that can no
- * longer settle. Nothing was charged in that case, which is what makes starting
- * over safe. Every other failure is passed straight up, because a payment that
- * failed for any other reason might have been a payment that went through.
+ * The retry is for one specific failure: the intent behind a prepared payment
+ * ages out, so a buyer who leaves the tab mid-purchase comes back to one that
+ * can no longer be completed. Nothing was charged in that case, which is what
+ * makes starting over safe. Every other failure is passed straight up, because
+ * a payment that failed for another reason might have been one that went
+ * through. (Arc gives an authorization half an hour rather than the two minutes
+ * a frozen Hedera transaction had, so this is now rare rather than routine.)
  */
 export async function buyGame(
   gameId: string,
-  signHashes: (hashes: string[]) => Promise<{ hash: string; signature: string }[]>,
+  signTypedData: (request: TypedDataRequest) => Promise<string>,
 ): Promise<AccessGrant> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const prepared = await preparePayment(gameId)
     if (prepared.status === 'granted') return prepared
 
-    const signatures = await signHashes(prepared.hashes)
+    const signature = await signTypedData(prepared.typedData)
     try {
-      return await completePayment(gameId, prepared.intentId, signatures)
+      return await completePayment(gameId, prepared.intentId, signature)
     } catch (error) {
       const expired =
         error instanceof ApiError && error.code === 'PAYMENT_INTENT_EXPIRED'

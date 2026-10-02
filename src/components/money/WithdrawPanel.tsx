@@ -86,7 +86,7 @@ export function WithdrawPanel() {
             : { amountUnits: String(Math.round(typed * 10 ** decimals)) }),
           ...(memo.trim() ? { memo: memo.trim() } : {}),
         },
-        signer.signHashes,
+        signer.sendTransaction,
         () => setStage('signing'),
       )
       setSent(result)

@@ -41,7 +41,7 @@ export function TrialPanel({
   const signedIn = session.signedIn
   // Checkout's Pay button has always waited for this; this one didn't, and a
   // click landing before Privy's embedded wallet had finished connecting threw
-  // straight out of `signHashes` with no server call to blame it on. Privy
+  // straight out of `signTypedData` with no server call to blame it on. Privy
   // lazily loads its signing iframe on first use, which is slow enough to hit
   // in the seconds right after a listing loads.
   const wallet = useWalletSigner()

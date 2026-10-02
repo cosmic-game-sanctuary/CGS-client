@@ -1,52 +1,48 @@
 import { request } from '@/lib/api'
+import type { TransactionRequest } from '@/auth/useWalletSigner'
 
 /**
  * Taking money out of the wallet Privy made for you.
  *
- * The same two-step shape as a purchase, for the same reason: building and
- * freezing a Hedera transfer needs a Hedera client, and the key that authorises
- * it belongs to the person sitting here. So the server prepares, the browser
- * signs, the server submits. See `auth/useWalletSigner.ts`.
+ * **Much smaller than it was.** On Hedera the server had to build, freeze and
+ * submit the transfer so the *operator* could pay the network fee — a wallet
+ * holding only USDC and no HBAR was otherwise a wallet you could not empty. On
+ * Arc the fee is paid in USDC, the same asset being withdrawn, so a wallet with
+ * money in it can always afford to move that money.
  *
- * **No HBAR is needed to do this.** The operator pays the network fee, because
- * a wallet holding only USDC would otherwise be a wallet you cannot empty.
+ * So the server validates and hands back the transaction, the browser sends it
+ * with the owner's own key, and the server confirms it from the chain. A little
+ * is held back from "send everything" to cover the fee.
+ *
+ * A developer's *share of sales* is not withdrawn here at all: it accrues in
+ * the game's SplitVault and they claim it from there.
  */
 
 export interface WithdrawRequest {
-  /**
-   * A Hedera account id (`0.0.x`) or an EVM address. Someone copying an address
-   * out of their own wallet has no reason to know which one we wanted.
-   */
+  /** An EVM address. */
   to: string
-  /** Defaults to the settlement asset. `0.0.0` is HBAR. */
-  asset?: string
-  /** Omit to send the whole balance, which is what "take it out" usually means. */
+  /** Omit to send everything the wallet can afford to send. */
   amountUnits?: string
-  /**
-   * Exchange deposit addresses are pooled accounts that work out whose deposit
-   * it is from this, the same mechanic as an XRP tag. Sending to one without it
-   * credits the money to nobody, so the field has to be offered.
-   */
-  memo?: string
 }
 
 export interface PreparedWithdrawal {
   intentId: string
-  /** Sign every one. The server matches on the hash, not the order. */
-  hashes: string[]
   to: string
   asset: string
   amountUnits: string
-  memo: string | null
   /** Display only. What the amount comes to once decimals are applied. */
   amountDisplay: number
   assetDecimals: number
+  /** Held back so the transfer itself can be paid for. */
+  reservedForGasUnits: string
+  /** Send this from the owner's wallet. */
+  transaction: TransactionRequest
   expiresAt: string
 }
 
 export interface WithdrawalSent {
   status: 'sent'
-  /** Look it up on the Mirror Node. This is the proof it left. */
+  /** Look it up on the explorer. This is the proof it left. */
   transactionId: string
   to: string
   asset: string
@@ -64,33 +60,30 @@ export function prepareWithdraw(
 
 export function completeWithdraw(
   intentId: string,
-  signatures: { hash: string; signature: string }[],
+  txHash: string,
 ): Promise<WithdrawalSent> {
   return request<WithdrawalSent>('/api/me/withdraw/complete', {
     method: 'POST',
-    body: { intentId, signatures },
+    body: { intentId, txHash },
   })
 }
 
 /**
- * Prepare, sign, submit.
+ * Prepare, send, confirm.
  *
- * **Deliberately without the retry a purchase has.** A frozen transaction ages
- * out after about two minutes, and buying auto-retries on that because nothing
- * was charged. Here the expiry and a network refusal come back as the same
- * error shape on the same field, so the two cannot be told apart from the
- * outside, and one of them may have moved money. Retrying by hand is the only
- * safe answer, and the server's own message already says to start again.
+ * **Deliberately without the retry a purchase has.** By the time `complete`
+ * runs the money has already moved — the browser sent the transaction itself —
+ * so a failure here is a failure to *record* a withdrawal that happened, never
+ * a reason to send a second one. The transaction hash is the receipt either
+ * way, and it is returned in the error path's own message.
  */
 export async function withdraw(
   body: WithdrawRequest,
-  signHashes: (
-    hashes: string[],
-  ) => Promise<{ hash: string; signature: string }[]>,
+  sendTransaction: (request: TransactionRequest) => Promise<string>,
   onPrepared?: (prepared: PreparedWithdrawal) => void,
 ): Promise<WithdrawalSent> {
   const prepared = await prepareWithdraw(body)
   onPrepared?.(prepared)
-  const signatures = await signHashes(prepared.hashes)
-  return completeWithdraw(prepared.intentId, signatures)
+  const txHash = await sendTransaction(prepared.transaction)
+  return completeWithdraw(prepared.intentId, txHash)
 }
