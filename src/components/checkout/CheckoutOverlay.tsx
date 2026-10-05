@@ -173,11 +173,15 @@ export function CheckoutOverlay({
       <GateShell
         title="checkout"
         step={
+          // Named, not numbered. A buyer already signed in with money in the
+          // wallet opened straight onto "Step 3 of 3 · confirm", having never
+          // seen a step 1 or 2, which reads as something having been skipped
+          // behind their back. The trial ladder has the same rule and says why.
           phase === 'signin'
-            ? 'Step 1 of 3 · sign in'
+            ? 'Sign in'
             : phase === 'funding'
-              ? 'Step 2 of 3 · add funds'
-              : 'Step 3 of 3 · confirm'
+              ? 'Add funds'
+              : 'Confirm'
         }
         priceUsd={oweUsd}
         hidden={lightsDown}
