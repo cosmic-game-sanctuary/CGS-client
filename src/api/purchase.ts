@@ -96,13 +96,26 @@ export function completePayment(
  * prepare quotes the price, the wallet signs the authorization, complete
  * settles it.
  *
- * The retry is for one specific failure: the intent behind a prepared payment
- * ages out, so a buyer who leaves the tab mid-purchase comes back to one that
- * can no longer be completed. Nothing was charged in that case, which is what
- * makes starting over safe. Every other failure is passed straight up, because
- * a payment that failed for another reason might have been one that went
- * through. (Arc gives an authorization half an hour rather than the two minutes
- * a frozen Hedera transaction had, so this is now rare rather than routine.)
+ * **There are two retries here and they are opposites.** Getting them the wrong
+ * way round is how a buyer gets charged twice.
+ *
+ * `PAYMENT_INTENT_EXPIRED` means the authorization aged out and **nothing was
+ * charged**, so starting over from `prepare` is safe. A buyer who leaves the tab
+ * mid-purchase comes back to this. (Arc gives an authorization half an hour
+ * rather than the two minutes a frozen Hedera transaction had, so it is now
+ * rare rather than routine.)
+ *
+ * `PAYMENT_PENDING` means settlement did not resolve inside the wait window and
+ * **the money may already be moving**. So the fix is the narrowest possible one:
+ * complete the *same* intent again, with the *same* signature. That resubmits
+ * one identical authorization under one identical idempotency key, and the
+ * token's own nonce makes a second transfer impossible. Calling `prepare` again
+ * here would mint a fresh authorization, which is a genuinely new payment and
+ * the one way to take the money twice. Hence the inner loop, which never
+ * re-prepares and never re-signs.
+ *
+ * Every other failure goes straight up: a payment that failed for a reason we
+ * don't recognise might still have been one that went through.
  */
 export async function buyGame(
   gameId: string,
@@ -114,7 +127,7 @@ export async function buyGame(
 
     const signature = await signTypedData(prepared.typedData)
     try {
-      return await completePayment(gameId, prepared.intentId, signature)
+      return await settleWithRetry(gameId, prepared.intentId, signature)
     } catch (error) {
       const expired =
         error instanceof ApiError && error.code === 'PAYMENT_INTENT_EXPIRED'
@@ -123,6 +136,35 @@ export async function buyGame(
   }
   // Unreachable: the loop either returns or throws on its second pass.
   throw new ApiError(409, 'PAYMENT_INTENT_EXPIRED', 'That payment timed out.')
+}
+
+/** How many times a pending settlement is re-completed before we give up. */
+const PENDING_ATTEMPTS = 5
+/** Between tries. The authorization is good for 30 minutes, so there's no rush. */
+const PENDING_BACKOFF_MS = 2000
+
+/**
+ * Complete one prepared payment, waiting out a settlement that hasn't resolved.
+ *
+ * Resubmits the identical intent and signature, which is what makes this safe
+ * to do at all. If it is still pending after a handful of tries the error is
+ * thrown as-is, because at that point the honest answer is "we don't know yet"
+ * and the buyer should be told that rather than shown a spinner forever.
+ */
+async function settleWithRetry(
+  gameId: string,
+  intentId: string,
+  signature: string,
+): Promise<AccessGrant> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await completePayment(gameId, intentId, signature)
+    } catch (error) {
+      const pending = error instanceof ApiError && error.code === 'PAYMENT_PENDING'
+      if (!pending || attempt >= PENDING_ATTEMPTS - 1) throw error
+      await new Promise((resolve) => setTimeout(resolve, PENDING_BACKOFF_MS))
+    }
+  }
 }
 
 /**
