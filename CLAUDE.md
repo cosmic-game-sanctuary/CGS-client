@@ -280,7 +280,9 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 
 | Who | Blocked on | Since | Needs |
 |---|---|---|---|
-| Both | **Every chain write 503s locally.** `ARC_OPERATOR_KEY` and `CIRCLE_API_KEY` are not in `.env` | 2026-10-04 | Two secrets from Priyanshu. The operator key **must be the one that deployed `CGS-contracts`** — `GameKey`'s minter and `GameRegistry`'s operator are fixed to the deploying address forever, so a fresh key is not a substitute. The Circle key is free from console.circle.com, and without it settling to a vault is refused (the keyless trial signs with the key controlling `payTo`, and a vault has no key). Reads, the catalog, the listing and the agent's event watching all work without either. |
+| Both | The operator holds ~$12 of testnet USDC, and it pays for everything | 2026-10-05 | Top-ups from faucet.circle.com to the **Arc operator**, `0x296c7608662B0D1feF5e205D042ab87E623043C0`. It pays the gas for every publish, mint, vault deploy and claim **and** is the source the dev faucet hands test wallets 5 USDC from, so browser testing drains it from both ends. A publish costs ~0.023 and a mint ~0.0044, so gas is cheap; the faucet is what empties it. |
+
+_Cleared 2026-10-05: `ARC_OPERATOR_KEY` and `CIRCLE_API_KEY` are both in `.env`. Nine of the ten `arc:check*` scripts pass against a running server, which also proves the operator key is the deploying one. `arc:check:contested` is unrun because it needs a deliberately shortened `AGENT_PURCHASE_BUFFER_MS`._
 
 ### Decisions
 
