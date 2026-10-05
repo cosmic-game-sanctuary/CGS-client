@@ -164,8 +164,8 @@ export function ProfileMenu() {
                 {funding ? 'Adding…' : 'Add funds'}
               </button>
             </div>
-            {/* The first top-up also creates the Hedera account behind the
-                wallet, which takes a few seconds longer than the rest. */}
+            {/* A transfer plus the balance re-read behind it, which is a beat
+                slower than the button press suggests. */}
             {funding ? (
               <p className="mt-2 font-mono text-[10px] text-ink-soft">
                 Moving real testnet funds. This takes a moment.
@@ -191,10 +191,7 @@ export function ProfileMenu() {
             ) : null}
 
             {session.address ? (
-              <DepositAddress
-                address={session.address}
-                accountId={session.hederaAccountId}
-              />
+              <DepositAddress address={session.address} />
             ) : null}
           </div>
 
@@ -248,27 +245,16 @@ export function ProfileMenu() {
  * Where to send funds from a wallet you already have.
  *
  * This is the path that does not spend anything of ours. A Privy embedded
- * wallet is an ordinary EVM address, and HashPack and friends can send
- * straight to one, so a person with their own testnet funds never needs the
- * faucet.
+ * wallet is an ordinary EVM address, so any wallet can send straight to it and
+ * a person with their own testnet funds never needs the faucet.
  *
- * No HBAR step, and that is worth stating because the obvious assumption is
- * wrong. The Hedera account behind this address does not exist until value
- * first lands on it, but under HIP-542 a token transfer creates it too: the
- * creation fee is charged to whoever sends, not deducted from what is sent.
- * Verified against testnet with a token-only transfer to an untouched address.
- * So USDC alone is enough, and nobody has to acquire HBAR to get started.
- *
- * The account id appears below once it exists, which doubles as confirmation
- * that the first transfer worked.
+ * **There is no second asset and no account to open.** On Arc, USDC *is* the
+ * gas token and an address is just an address, so one transfer of one asset is
+ * the whole of getting started. This used to explain the Hedera account that
+ * came into existence on the first transfer, and the HBAR you nonetheless did
+ * not need; neither exists any more.
  */
-function DepositAddress({
-  address,
-  accountId,
-}: {
-  address: string
-  accountId: string | null
-}) {
+function DepositAddress({ address }: { address: string }) {
   const [copied, setCopied] = useState(false)
 
   useEffect(() => {
@@ -313,10 +299,7 @@ function DepositAddress({
         </button>
       </div>
       <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-ink-soft">
-        Send USDC here. The first thing that arrives opens the account.
-      </p>
-      <p className="mt-1 font-mono text-[10px] text-ink-faint">
-        {accountId ? `Account ${accountId}` : 'No account yet'}
+        Send USDC here. Nothing else is needed, not even gas.
       </p>
     </div>
   )

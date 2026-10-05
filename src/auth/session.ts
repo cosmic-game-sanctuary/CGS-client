@@ -11,8 +11,8 @@ import { faucet, getMe } from '@/api/me'
  * Two sources, answering different questions. **Privy** owns whether you are
  * signed in and which wallet is yours; it restores itself on reload, so there
  * is no session to persist here. **`GET /api/me`** owns everything that
- * depends on the chain or the database: the Hedera account, the balance, the
- * studio you publish as. Anything derived from money asks the server, because
+ * depends on the chain or the database: the wallet, the balance, the studio
+ * you publish as. Anything derived from money asks the server, because
  * a balance we cached is a balance that is already wrong.
  *
  * The provider lives in `SessionProvider.tsx`; this file is the context, the
@@ -38,17 +38,9 @@ export interface SessionState {
   avatarUrl: string | null
   /** The embedded wallet Privy made for you. */
   address: string | null
-  /** Null until that wallet has received value. See the funding step. */
-  hederaAccountId: string | null
   /** Display only. `balanceUnits` is the integer everything else uses. */
   balanceUsd: number
   balanceUnits: number
-  /**
-   * HBAR, separately, because it cannot buy anything here. The facilitator
-   * pays the fee on a purchase and the operator pays it on a withdrawal, so
-   * this is only ever what opened the account.
-   */
-  hbar: number
   /**
    * Decimals of the settlement asset. Needed to turn a price someone typed
    * into the integer units the API wants, and there is nowhere else to learn
@@ -96,10 +88,8 @@ export const EMPTY_SESSION: SessionState = {
   label: null,
   avatarUrl: null,
   address: null,
-  hederaAccountId: null,
   balanceUsd: 0,
   balanceUnits: 0,
-  hbar: 0,
   assetDecimals: 6,
   ownedGameIds: [],
   studioId: null,
@@ -160,10 +150,10 @@ export function grantKey(gameId: string) {
 /**
  * Put a test balance in this wallet.
  *
- * Real money moved by the server, not a number bumped locally: a Privy wallet
- * has no Hedera account until it first receives value, so this is also what
- * brings the account into existence. Development only, and the route is not
- * even mounted unless the server was started with DEV_FAUCET=on.
+ * Real money moved by the server, not a number bumped locally. Nothing hands
+ * out testnet USDC to an arbitrary address, so without this a fresh test buyer
+ * could never buy anything. Development only, and the route is not even mounted
+ * unless the server was started with DEV_FAUCET=on.
  * TODO(integration): Privy's own funding UI replaces this before any deploy.
  */
 export async function fund(amountUsd?: number): Promise<void> {

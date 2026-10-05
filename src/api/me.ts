@@ -23,20 +23,10 @@ export interface WireMe {
   label: string
   avatarUrl: string | null
   libraryPublic: boolean
-  /** Null until the wallet has received value. No account means no balance. */
-  hederaAccountId: string | null
   balanceUnits: string | null
   balanceAsset: string
   balanceUsd: number
   balanceAssetDecimals: number
-  /**
-   * Tinybars, and reported apart from the settlement asset because it is not
-   * spending money here: the facilitator covers the fee on a purchase and the
-   * operator covers it on a withdrawal. A wallet holding some HBAR and no USDC
-   * is funded with nothing to spend, and that read as empty without this.
-   */
-  hbarUnits: string | null
-  hbar: number
   /** Whichever studio is primary. Kept so existing callers don't move. */
   studio: (WireMeStudio & { handle: string }) | null
   /** Every studio you own or joined. Being on two teams is normal. */

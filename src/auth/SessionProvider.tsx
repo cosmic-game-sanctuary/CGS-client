@@ -161,10 +161,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       label: me?.label ?? user?.email?.address ?? null,
       avatarUrl: me?.avatarUrl ?? null,
       address: me?.evmAddress ?? privyAddress,
-      hederaAccountId: me?.hederaAccountId ?? null,
       balanceUsd: me?.balanceUsd ?? 0,
       balanceUnits: me?.balanceUnits ? Number(me.balanceUnits) : 0,
-      hbar: me?.hbar ?? 0,
       assetDecimals: me?.balanceAssetDecimals ?? 6,
       // Keyed to the user, so signing out or switching accounts cannot leave
       // the previous person's keys on screen.

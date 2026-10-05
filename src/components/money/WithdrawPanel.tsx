@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { withdraw, type WithdrawalSent } from '@/api/withdraw'
 import { useWalletSigner } from '@/auth/useWalletSigner'
 import { ApiError, errorMessage } from '@/lib/api'
-import { formatAmount, formatAsset } from '@/lib/format'
+import { formatAmount } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { refreshSession, useSession } from '@/auth/session'
 
@@ -20,22 +20,18 @@ import { refreshSession, useSession } from '@/auth/session'
  * bank does it: the whole balance is one field and one press away, and a form
  * that can empty an account should take a decision to open.
  *
- * **No HBAR is needed.** The operator pays the network fee, so a wallet holding
- * only USDC can still be emptied. That is worth knowing before reading the
- * asset switch below, which exists only because HBAR turns up in these wallets
- * as the thing that opened the account.
+ * **There is one asset and it pays its own fee.** On Arc, USDC *is* the gas
+ * token, so a wallet holding only USDC can always afford to move it and there
+ * is nothing to choose between. This used to carry a second asset and a switch
+ * to pick it, because on Hedera a wallet also held the HBAR that had opened its
+ * account; both are gone with the chain they belonged to.
  */
-
-/** Hedera's own id for HBAR in an asset field. Not a token, hence the zeroes. */
-const HBAR = '0.0.0'
-const HBAR_DECIMALS = 8
 
 export function WithdrawPanel() {
   const session = useSession()
   const signer = useWalletSigner()
 
   const [open, setOpen] = useState(false)
-  const [asset, setAsset] = useState<'settlement' | 'hbar'>('settlement')
   const [to, setTo] = useState('')
   const [whole, setWhole] = useState(true)
   const [amount, setAmount] = useState('')
@@ -44,15 +40,8 @@ export function WithdrawPanel() {
   const [sent, setSent] = useState<WithdrawalSent | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
 
-  const isHbar = asset === 'hbar'
-  const available = isHbar ? session.hbar : session.balanceUsd
-  const decimals = isHbar ? HBAR_DECIMALS : session.assetDecimals
-  // Left off entirely for the settlement asset: the server defaults to it, and
-  // naming it here would mean this file has an opinion about which token the
-  // store settles in.
-  const assetId = isHbar ? HBAR : undefined
-  const show = (value: number) =>
-    isHbar ? formatAsset(value, HBAR) : formatAmount(value)
+  const available = session.balanceUsd
+  const decimals = session.assetDecimals
 
   const typed = Number(amount)
   const amountOk =
@@ -77,7 +66,6 @@ export function WithdrawPanel() {
       const result = await withdraw(
         {
           to: to.trim(),
-          ...(assetId ? { asset: assetId } : {}),
           // Omitted for "everything", which is the case that matters: the
           // server reads the live balance and sends exactly that, so nothing
           // here has to do arithmetic on money it only knows as a float.
@@ -134,35 +122,11 @@ export function WithdrawPanel() {
 
       {open ? (
         <div className="mt-4 flex flex-col gap-4 rounded-card border-2 border-ink bg-paper-sunk p-5">
-          {/* HBAR only appears when there is some, because for almost everyone
-              there never is: the facilitator pays the fee on a purchase and the
-              operator pays it here, so HBAR is only ever what opened the
-              account. A permanent switch would imply a decision nobody has. */}
-          {session.hbar > 0 ? (
-            <Field label="What to send">
-              <div className="flex flex-wrap gap-2">
-                <Choice
-                  on={!isHbar}
-                  onClick={() => setAsset('settlement')}
-                  label={`USDC · ${formatAmount(session.balanceUsd)}`}
-                />
-                <Choice
-                  on={isHbar}
-                  onClick={() => setAsset('hbar')}
-                  label={formatAsset(session.hbar, HBAR)}
-                />
-              </div>
-            </Field>
-          ) : null}
-
-          <Field
-            label="Send to"
-            hint="A Hedera account id, or a wallet address."
-          >
+          <Field label="Send to" hint="Any wallet address.">
             <input
               value={to}
               onChange={(event) => setTo(event.target.value)}
-              placeholder="0.0.512345 or 0x…"
+              placeholder="0x…"
               spellCheck={false}
               autoComplete="off"
               className={`${input} font-mono text-[14px]`}
@@ -174,7 +138,7 @@ export function WithdrawPanel() {
               <Choice
                 on={whole}
                 onClick={() => setWhole(true)}
-                label={`Everything · ${show(available)}`}
+                label={`Everything · ${formatAmount(available)}`}
               />
               <Choice
                 on={!whole}
@@ -184,9 +148,7 @@ export function WithdrawPanel() {
             </div>
             {!whole ? (
               <div className="mt-2.5 flex items-center gap-2">
-                {!isHbar ? (
-                  <span className="font-mono text-[15px] text-ink-soft">$</span>
-                ) : null}
+                <span className="font-mono text-[15px] text-ink-soft">$</span>
                 <input
                   value={amount}
                   inputMode="decimal"
@@ -194,11 +156,6 @@ export function WithdrawPanel() {
                   placeholder="0.00"
                   className={`${input} max-w-40 font-mono`}
                 />
-                {isHbar ? (
-                  <span className="font-mono text-[13px] text-ink-soft">
-                    HBAR
-                  </span>
-                ) : null}
               </div>
             ) : null}
             {overdrawn ? (
