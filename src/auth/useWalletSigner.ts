@@ -104,19 +104,46 @@ export function useWalletSigner(): WalletSigner {
 
   const sendTransaction = useCallback(
     async (request: TransactionRequest) => {
-      const { wallet: current, provider } = await connected()
+      const current = walletRef.current
+      if (!current) {
+        throw new Error('Your wallet is still connecting. Give it a second.')
+      }
+
+      // **Put the wallet on the chain this transaction is for, every time.**
+      // `chainId` used to ride along on the request and be ignored, so the
+      // transaction went to whatever chain the wallet was on — Ethereum
+      // mainnet, until `PrivyBoot` named Arc. `defaultChain` fixes the common
+      // case; this fixes the rest, because the chain id comes from the server
+      // and only the server knows which network it is pointed at.
+      //
+      // Privy throws for a chain outside `supportedChains`, which is the
+      // behaviour wanted: refusing loudly beats sending to the wrong network.
+      if (current.chainId !== `eip155:${request.chainId}`) {
+        await current.switchChain(request.chainId)
+      }
+      // Fetched **after** the switch, not before. Privy's own note: switching
+      // does not update a provider that already exists. Reusing one obtained
+      // first would send on the old chain with the new one merely requested,
+      // which is the same bug again one layer down.
+      const provider = await current.getEthereumProvider()
+
       // Hex, because that is what the JSON-RPC method expects — a decimal
       // string is silently misread as something else entirely.
       //
       // `value` and `data` are both left off entirely when absent rather than
       // sent as zero or empty: some providers treat a present-but-empty `data`
       // as a reason to re-estimate a plain transfer as a contract call.
+      //
+      // `chainId` goes in too. A provider that honours it rejects a mismatch
+      // instead of re-pointing the transaction, which is a second lock on the
+      // same door.
       return (await provider.request({
         method: 'eth_sendTransaction',
         params: [
           {
             from: current.address,
             to: request.to,
+            chainId: `0x${request.chainId.toString(16)}`,
             ...(request.value === undefined
               ? {}
               : { value: `0x${BigInt(request.value).toString(16)}` }),
@@ -125,7 +152,8 @@ export function useWalletSigner(): WalletSigner {
         ],
       })) as string
     },
-    [connected],
+    // Reads the wallet through the ref, so nothing here is a dependency.
+    [],
   )
 
   const waitForReceipt = useCallback(

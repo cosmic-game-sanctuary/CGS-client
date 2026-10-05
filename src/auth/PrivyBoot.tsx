@@ -1,5 +1,6 @@
 import { PrivyProvider } from '@privy-io/react-auth'
 import type { ReactNode } from 'react'
+import { arcTestnet } from 'viem/chains'
 import { SessionProvider } from '@/auth/SessionProvider'
 
 /**
@@ -15,6 +16,20 @@ import { SessionProvider } from '@/auth/SessionProvider'
  * `loginMethods` is email only, on purpose. An external-wallet option would
  * put "connect your wallet" on the first screen of a store that has spent its
  * whole design arguing it is not a crypto app (CLAUDE.md §1).
+ *
+ * **`supportedChains` and `defaultChain` are what make a wallet write land on
+ * Arc at all.** Without them Privy's embedded wallet sits on Ethereum mainnet,
+ * and every transaction it sends is built for chain 1 whatever the request
+ * said. That was invisible while the only writes were signatures, which carry
+ * their chain inside the typed data. The first real transaction — the Gateway
+ * deposit's `approve` — went out as a chainId-1 transaction to Privy's mainnet
+ * RPC and only failed because the wallet held no mainnet ETH. Withdrawals and
+ * agent funding share the same path and would have done the same.
+ *
+ * Testnet only, deliberately. viem's `arc` mainnet definition ships no RPC, and
+ * an embedded wallet on a chain with no RPC fails in ways that are much harder
+ * to read than "unsupported chain". If the server is ever pointed at mainnet,
+ * `useWalletSigner` refuses the switch loudly rather than sending anywhere.
  */
 const APP_ID = import.meta.env.VITE_PRIVY_APP_ID
 
@@ -26,6 +41,8 @@ export function PrivyBoot({ children }: { children: ReactNode }) {
       appId={APP_ID}
       config={{
         loginMethods: ['email'],
+        defaultChain: arcTestnet,
+        supportedChains: [arcTestnet],
         embeddedWallets: {
           ethereum: { createOnLogin: 'users-without-wallets' },
         },
