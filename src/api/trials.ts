@@ -184,20 +184,42 @@ export async function buyChunk(
  * - **Minus what's already deposited.** One Gateway balance covers every game,
  *   so someone who tried something else last week may need only the difference,
  *   or nothing.
- * - **Capped at the wallet.** The funding rung above only guarantees one
- *   chunk's price, so a wallet can legitimately hold less than the worst case.
- *   Asking for more than it has would strand the buyer on a rung they cannot
- *   clear. They deposit what they have, and the meter runs as far as it goes.
+ * - **Capped at the wallet, minus gas.** The funding rung only guarantees one
+ *   chunk's price plus `GAS_RESERVE_UNITS`, so a wallet can legitimately hold
+ *   less than the worst case. Asking for more than it has would strand the
+ *   buyer on a rung they cannot clear. They deposit what they have, and the
+ *   meter runs as far as it goes.
+ *
+ * **Gas comes out of the same balance**, which is the part that is easy to
+ * miss. On Arc USDC *is* the gas token, so a wallet holding exactly the worst
+ * case that deposits all of it has nothing left to pay for the second of its
+ * two transactions, and the deposit reverts after the approval already
+ * landed. The reserve is held back from the cap for that reason.
+ *
+ * Takes the deposit separately rather than reading `trial.gatewayDeposit`,
+ * because the trial object can predate sign-in, when the server reports no
+ * deposit at all.
  */
 export function depositAmountFor(
   trial: WireTrial,
+  deposit: GatewayDeposit,
   balanceUnits: number,
 ): bigint {
-  const already = BigInt(trial.gatewayDeposit?.availableUnits ?? '0')
+  const already = BigInt(deposit.availableUnits)
   const target = BigInt(trial.worstCaseUnits) - already
-  const affordable = BigInt(Math.max(0, Math.floor(balanceUnits)))
+  const spendable = Math.floor(balanceUnits) - GAS_RESERVE_UNITS
+  const affordable = BigInt(Math.max(0, spendable))
   return target < affordable ? target : affordable
 }
+
+/**
+ * Held back from a deposit for the gas on its own two transactions.
+ *
+ * $0.01, against a measured ~0.0006 for an approval and a couple of thousandths
+ * for the deposit: several times what it costs, and still small next to any
+ * trial worth offering.
+ */
+export const GAS_RESERVE_UNITS = 10_000
 
 /**
  * Put USDC into Gateway so chunks can be paid from it.

@@ -8,7 +8,7 @@ import {
   SignInBody,
 } from '@/components/checkout/AccountGate'
 import { useCountdown } from '@/lib/countdown'
-import { gatePhaseFor } from '@/lib/gate'
+import { gatePhaseFor, type GatePhase } from '@/lib/gate'
 import { cn } from '@/lib/utils'
 import { formatAmount, formatPrice } from '@/lib/format'
 import { buildPathFor, mountBuildFromPath, buyGame } from '@/api/purchase'
@@ -16,6 +16,7 @@ import {
   buyChunk,
   depositAmountFor,
   depositToGateway,
+  GAS_RESERVE_UNITS,
   getTrial,
   waitForDeposit,
   type WireTrial,
@@ -82,8 +83,15 @@ export function TrialSession({
   // at the top of it. It cannot be derived every render: the meter spends the
   // balance as they play, and a derived gate would slam shut mid-game and take
   // the running build with it.
+  //
+  // A null `gatewayDeposit` is never "no deposit needed". The server sends null
+  // to a signed-out caller, so a trial opened before sign-in carries one even
+  // for someone who has never deposited. Only a read that actually came back
+  // with a deposit can wave anyone past the gate.
   const [launched, setLaunched] = useState(
-    () => gatePhaseFor(session, needUnits, trial.gatewayDeposit) === 'ready',
+    () =>
+      trial.gatewayDeposit !== null &&
+      gatePhaseFor(session, needUnits, trial.gatewayDeposit) === 'ready',
   )
 
   if (!launched) {
@@ -118,6 +126,15 @@ export function TrialSession({
  * a session whose very first charge could only fail, after the build had
  * downloaded and the shutter had come up.
  */
+/** What the header says on each rung. See the comment where it is used. */
+const STEP_LABEL: Record<GatePhase | 'checking', string> = {
+  signin: 'Sign in',
+  funding: 'Add funds',
+  deposit: 'Set up the meter',
+  checking: 'One moment',
+  ready: 'Ready when you are',
+}
+
 function TrialGate({
   game,
   trial,
@@ -135,22 +152,60 @@ function TrialGate({
   const wallet = useWalletSigner()
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-  // The trial prop is a snapshot read before this opened, so the deposit half
-  // of it has to be local: depositing is the one thing on this screen that
-  // changes it, and the phase below has to see that change.
-  const [deposit, setDeposit] = useState(trial.gatewayDeposit)
+  // **Whose Gateway balance this is, as well as what it is.** The trial prop is
+  // a snapshot from when "Try it" was pressed, and pressed signed out it says
+  // `gatewayDeposit: null` because the server will not report a balance for
+  // nobody. Trusting that after sign-in skipped the deposit rung entirely, and
+  // the first chunk then failed for funds the wallet plainly had. So the
+  // deposit is tagged with the user it was read for, and re-read for anyone
+  // else. Depositing also changes it, which is the other reason it is local.
+  const [read, setRead] = useState(() => ({
+    userId:
+      session.signedIn && trial.gatewayDeposit !== null ? session.userId : null,
+    deposit: trial.gatewayDeposit,
+  }))
+  const known = session.signedIn && read.userId === session.userId
+  const deposit = known ? read.deposit : null
   const [depositStage, setDepositStage] = useState<
     'idle' | 'approving' | 'depositing' | 'confirming'
   >('idle')
 
-  const phase = gatePhaseFor(session, needUnits, deposit)
+  useEffect(() => {
+    if (!session.signedIn || !session.userId) return
+    if (read.userId === session.userId) return
+    const userId = session.userId
+    let live = true
+    getTrial(game.id)
+      .then((fresh) => {
+        if (live) setRead({ userId, deposit: fresh.gatewayDeposit })
+      })
+      .catch((error) => {
+        if (live) setProblem(errorMessage(error))
+      })
+    return () => {
+      live = false
+    }
+  }, [session.signedIn, session.userId, read.userId, game.id])
+
+  // A deposit is paid for in the same USDC it moves, so someone about to make
+  // one needs the chunk *and* the gas for two transactions before they clear
+  // the funding rung. Asking for only the chunk would let them through to a
+  // deposit that cannot pay for itself.
+  const fundUnits = needUnits + (deposit?.needsDeposit ? GAS_RESERVE_UNITS : 0)
+  const base = gatePhaseFor(session, fundUnits, deposit)
+  // Signed in and funded, but Gateway has not been asked yet. Never "ready"
+  // on a guess: that guess is exactly what started a trial with no deposit.
+  const phase = base === 'ready' && !known ? 'checking' : base
   const chunkUsd = trial.chunkPriceUsd ?? 0
-  const shortfall = Math.max(0, chunkUsd - session.balanceUsd)
-  const depositUnits = depositAmountFor(trial, session.balanceUnits)
+  const shortfall = Math.max(
+    0,
+    chunkUsd + (deposit?.needsDeposit ? GAS_RESERVE_UNITS / 10 ** trial.assetDecimals : 0) -
+      session.balanceUsd,
+  )
+  const depositUnits = deposit
+    ? depositAmountFor(trial, deposit, session.balanceUnits)
+    : 0n
   const depositUsd = Number(depositUnits) / 10 ** trial.assetDecimals
-  // Three rungs only for someone who has never deposited. Read off the live
-  // `deposit`, so it drops to two the moment they have.
-  const rungs = deposit?.needsDeposit ? 3 : 2
 
   async function handleDeposit() {
     if (!deposit) return
@@ -168,7 +223,7 @@ function TrialGate({
         setDepositStage('idle')
         return
       }
-      setDeposit(fresh.gatewayDeposit)
+      setRead({ userId: session.userId, deposit: fresh.gatewayDeposit })
       setDepositStage('idle')
     } catch (error) {
       setProblem(errorMessage(error))
@@ -200,17 +255,13 @@ function TrialGate({
       <GateShell
         title="this trial"
         step={
-          // Counted against however many rungs this person actually has to
-          // climb, which is not the same for everyone: a buyer who has already
-          // deposited for another game's trial never sees that step at all, and
-          // numbering it anyway would promise a step that never comes.
-          phase === 'signin'
-            ? `Step 1 of ${rungs} · sign in`
-            : phase === 'funding'
-              ? `Step 2 of ${rungs} · add funds`
-              : phase === 'deposit'
-                ? `Step ${rungs} of ${rungs} · set up the meter`
-                : 'Ready when you are'
+          // Named, not numbered. This said "Step 3 of 3" to someone already
+          // signed in and funded, who had never seen a step 1 or 2. An honest
+          // count is not knowable up front: whether funds or a deposit are
+          // needed is only learned after sign-in, so any "of N" is a guess
+          // that is wrong for somebody. Each panel's own heading already says
+          // what it is.
+          STEP_LABEL[phase]
         }
         priceUsd={chunkUsd}
         problem={problem}
@@ -279,12 +330,14 @@ function TrialGate({
               variant="primary"
               size="lg"
               className="mt-4 w-full"
-              disabled={!wallet.ready}
+              disabled={!wallet.ready || phase === 'checking'}
               onClick={onStart}
             >
-              {wallet.ready
-                ? `Start playing · ${formatAmount(chunkUsd)}`
-                : 'Connecting wallet…'}
+              {phase === 'checking'
+                ? 'Checking your balance…'
+                : wallet.ready
+                  ? `Start playing · ${formatAmount(chunkUsd)}`
+                  : 'Connecting wallet…'}
             </Button>
             <p className="mt-3 font-mono text-[11px] text-ink-soft">
               Every cent comes off the price if you buy it.
