@@ -7,7 +7,7 @@ Working rules for this repo. Read before writing any code.
 | Repo | What | Our access |
 |---|---|---|
 | `CGS-client` | ← you are here. Vite + React web app. | read / write |
-| `CGS-server` | Node + Express + Drizzle + Hedera. Kai's. | **read only** |
+| `CGS-server` | Node + Express + Drizzle + Arc (viem). Kai's. | **read only** |
 | `CGS-docs` | Product story and shared progress log. | read only, **except `PROGRESS-LOG.md`** |
 
 Never write to `CGS-server`, and never to `CGS-docs` beyond `PROGRESS-LOG.md`, which is the shared handover and is meant to be written to from both sides. Read from them freely:
@@ -23,7 +23,7 @@ Never write to `CGS-server`, and never to `CGS-docs` beyond `PROGRESS-LOG.md`, w
 
 ## 1. Product context
 
-**Cosmic Game Sanctuary** — a storefront for browser-playable indie games where payment and ownership settle on Hedera. Devs upload HTML5/WASM builds, buyers pay in crypto, and a **GameKey** token lands in the buyer's wallet as real proof of ownership. ETHOnline 2026, Start Fresh track, team of two.
+**Cosmic Game Sanctuary** — a storefront for browser-playable indie games where payment and ownership settle on Arc (Circle's EVM chain, USDC as gas). It ran on Hedera until the October port. Devs upload HTML5/WASM builds, buyers pay in crypto, and a **GameKey** token lands in the buyer's wallet as real proof of ownership. ETHOnline 2026, Start Fresh track, team of two.
 
 **The origin:** in 2025 Visa and Mastercard pressured itch.io and Steam into mass delistings overnight. CGS removes the payment processor from the equation, so no card network gets a veto on what's sellable.
 
@@ -44,7 +44,7 @@ Not a web3 game. Not GameFi. Not an adult-content site. Say it early — ~90% of
 |---|---|---|
 | Catalog / browse | ✅ done | Grid, filters, sort, search, empty + loading states. Works with no wallet and no login. |
 | Game listing | ✅ done | Cover, description, price, public splits, verified-purchase reviews, report. |
-| Checkout | ✅ done | Overlay, not a route. Sign in → fund → pay → mint → boot. **Real:** x402 on Hedera, signed by the buyer's own wallet in the tab. |
+| Checkout | ✅ done | Overlay, not a route. Sign in → fund → pay → mint → boot. **Real:** x402 on Arc, EIP-712 signed by the buyer's own wallet in the tab, gas paid by Circle. |
 | In-browser player | ✅ done | `GameStage` on the night surface + a `/play/:slug` permalink. Runs the real purchased build. |
 | Dev upload | ✅ done | Four steps: build → details → splits → publish. **A dropped zip actually runs in the page.** Publishing pins to IPFS and mints a real token. |
 | Studio profile | ✅ done | Games, ENS name, stats, and credits derived from splits. |
@@ -65,7 +65,7 @@ Smaller pieces:
 | Real build in the player | ✅ done | Client-side unzip plus a service worker; see §3. |
 | 404 | ✅ done | A real page, not a redirect. Bouncing to `/` hid broken links. |
 | Studio creation | ✅ done | `/studio/new`, and `/publish` shows it as step 0 when you have none. |
-| Teammate invite | ✅ done | `/invite/:id`. The other end of the splits editor. Reachable signed out. Accepting is what releases the payouts held for someone who hadn't claimed. |
+| Teammate invite | ✅ done | `/invite/:id`. The other end of the splits editor. Reachable signed out. A share accrues in the game's vault either way; accepting is what lets the person claim it. |
 | Notifications | ✅ done | A panel in the header, not a page. Sales, invites, agent buys, publishes. |
 
 **Priority if time runs short:** checkout→instant play, then drag-zip→preview, then a catalog that doesn't look empty, then the agent screen. Cut breadth, keep those four sharp.
@@ -132,7 +132,7 @@ Price triggers are set **on the game listing**, under the buy box, not on a page
 | Styling | **Tailwind v4** — tokens via `@theme` in `src/styles/tokens.css` ([DESIGN.md §12](DESIGN.md)) |
 | Components | shadcn/ui via [neobrutalism.dev](https://www.neobrutalism.dev) as a starting skeleton, **tokens overwritten with ours immediately** |
 | Icons | `@iconify-json/streamline-freehand` (CC BY 4.0) for character, `lucide-react` (MIT) for chrome |
-| Auth / wallets | `@privy-io/react-auth` — **later, not now** |
+| Auth / wallets | `@privy-io/react-auth`, email login, embedded wallets pinned to Arc testnet with Privy's own prompts off (`auth/PrivyBoot.tsx`) |
 | Routing / data | not chosen yet — decide when the second screen lands, not before |
 
 ### tsconfig gotchas (already set, will bite generated code)
@@ -188,7 +188,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Integrated against the live API, and **ported from Hedera to Arc** (4 Oct). Money, GameKeys, builds, invites, claims, withdrawals, sales and paid trials are all real; everything but the Arc port itself was tested in a browser. **The agent now makes a real contested choice** — two games on sale, budget for one, deferred to the wire and decided there. Four smaller cases are still unrun; see Next up.
+**Stage:** Integrated against the live API, and **ported from Hedera to Arc** (4 Oct). Money, GameKeys, builds, invites, claims, withdrawals, sales and paid trials are all real. **On Arc, browser-tested as of 5 Oct:** a trial with its Gateway deposit, two metered chunks, and buying the game with the trial credited. The rest of the port is verified on chain or by script but not yet clicked through; see Next up. **The agent now makes a real contested choice** — two games on sale, budget for one, deferred to the wire and decided there. Four smaller cases are still unrun; see Next up.
 
 > **The chain changed under this repo.** Hedera is gone from CGS-server entirely: no HTS, no HCS, no Mirror Node, no `@hiero-ledger/sdk`. Money settles on **Arc** (Circle's EVM L1, chain `5042002`, where USDC is the gas token), ownership is an ERC-721 `GameKey`, splits are an immutable `SplitVault` per game, the agent reads `GameRegistry` events instead of an HCS topic, and its identity is ERC-8004. Contracts live in the fourth repo, **`CGS-contracts`** (Foundry, read-only to us). Three consequences that bite: **a buyer pays no gas** (Circle's facilitator covers it, so a wallet holding exactly the price can buy), **payments are EIP-712 typed data** rather than raw hashes, and **never build an explorer URL on this side** — the server sends one wherever it returns a transaction, because which explorer resolves it is a fact about the chain the server is pointed at.
 
@@ -219,7 +219,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 1. ~~**W12 sales.**~~ **Done, tested 2026-09-08.** See the log entry below. **One gap, and it is the server's:** `promotion` is on the game detail route only, so a catalog card shows the discounted price (which is the game's real price while a sale runs) but cannot say it is discounted.
 2. ~~**W13 paid trials.**~~ **Done, tested 2026-09-08.** Two server changes were needed and are on `frontend-integration` in CGS-server. See the log entry below.
 3. ~~**W9 the agent, rebuilt as 1:N.**~~ **The headline case works.** Creating, funding, setting a want, the deferral and the contested round are all verified: two games on sale at once against a budget for one, and it waited, then chose. The decision rule was rewritten on 9 Sep after the first version turned out to make that round unreachable. **Still unrun: the second wire, the plain price cut, ask-first and the wind-down.** See both log entries below. Testing needs `GROQ_API_KEY` and the default hour in `AGENT_PURCHASE_BUFFER_MS`, where a 70-minute sale decides in 10.
-4. **The Arc port, on this side.** Done and not browser-tested: the Gateway deposit step, the `PAYMENT_PENDING` retry, ERC-8004 identity on `/agent`, server-sent explorer links, and the HBAR removal. **Blocked on two secrets, not on code** — see Blockers.
+4. **The Arc port, on this side.** Trial, deposit and purchase are browser-tested (5 Oct). **Still to click through:** publishing a real build with the new progress panel, a withdrawal and agent funding (both go through the wallet-chain fix and have never sent on Arc from a browser), opening a trial signed out (the path that used to skip the deposit), the silent trial meter, and the set-aside line on `/money`. Not forceable: `PAYMENT_PENDING` only fires when Circle is slow.
 5. Then likes and comments, which have API modules and no UI, then Impeccable per screen and swipe discovery if there is time.
 
 **Untested:** cloud saves (no build we have writes to storage) and the failed-payout path (nothing has failed yet).
@@ -239,8 +239,7 @@ src/auth/                 SessionProvider + session.ts (who you are, what your
                           server cannot take)
 src/mocks/                types.ts is the view model every component is written
                           against, and the reason this folder still exists.
-                          games.ts survives for mediaFor; agent.ts is the last
-                          real mock
+                          games.ts survives for mediaFor
 src/lib/                  cn(), format.ts for every ledger value, countdown.ts
                           for a deadline that ticks, buildPreview.ts +
                           previewHost.ts for running a real zip
@@ -280,7 +279,7 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 
 | Who | Blocked on | Since | Needs |
 |---|---|---|---|
-| Both | The operator holds ~$12 of testnet USDC, and it pays for everything | 2026-10-05 | Top-ups from faucet.circle.com to the **Arc operator**, `0x296c7608662B0D1feF5e205D042ab87E623043C0`. It pays the gas for every publish, mint, vault deploy and claim **and** is the source the dev faucet hands test wallets 5 USDC from, so browser testing drains it from both ends. A publish costs ~0.023 and a mint ~0.0044, so gas is cheap; the faucet is what empties it. |
+| Both | The operator holds ~$47 of testnet USDC (topped up 5 Oct), and it pays for everything | 2026-10-05 | Top-ups from faucet.circle.com to the **Arc operator**, `0x296c7608662B0D1feF5e205D042ab87E623043C0`. It pays the gas for every publish, mint, vault deploy and claim **and** is the source the dev faucet hands test wallets 5 USDC from, so browser testing drains it from both ends. A publish costs ~0.023 and a mint ~0.0044, so gas is cheap; the faucet is what empties it. |
 
 _Cleared 2026-10-05: `ARC_OPERATOR_KEY` and `CIRCLE_API_KEY` are both in `.env`. Nine of the ten `arc:check*` scripts pass against a running server, which also proves the operator key is the deploying one. `arc:check:contested` is unrun because it needs a deliberately shortened `AGENT_PURCHASE_BUFFER_MS`._
 
@@ -304,13 +303,13 @@ _Cleared 2026-10-05: `ARC_OPERATOR_KEY` and `CIRCLE_API_KEY` are both in `.env`.
 | Invite | Its own route, reachable signed out | It is the first thing a new person ever sees of CGS, arriving from an email. Gating it behind sign-in would ask for an account before saying why. |
 | Integration order | One workflow end to end, then the next | A layer at a time leaves every screen half-wired and nothing testable. Each pass ends with something that either works in a browser or doesn't. |
 | API layer | `src/api/*` over `src/lib/api.ts`, with `wire.ts` / `adapt.ts` / `types.ts` split three ways | Components stay written against a view model that suits them. When the API changes, the diff is in one file rather than a hundred screens. |
-| Where a purchase is signed | The server freezes the transfer, the **browser** signs the hashes, the server settles | Privy will not let the server sign with a buyer's own wallet, and the ways around that ask for standing permission to move their money. The browser has always been able to sign for its own wallet. §3. |
+| Where a purchase is signed | ~~The server freezes the transfer, the **browser** signs the hashes, the server settles~~ **Superseded by the Arc port:** the server builds an EIP-3009 authorization, the browser signs it as EIP-712 typed data, Circle settles | Privy will not let the server sign with a buyer's own wallet, and the ways around that ask for standing permission to move their money. The browser has always been able to sign for its own wallet. §3. |
 | Where a build comes from | The API, unpacked in the browser onto the build origin | No IPFS gateway will serve one (Pinata refuses HTML on shared subdomains; public gateways can't find fresh CIDs). The CID still proves what a build is. |
 | Boot sequences | Beats carry the work; their timings are floors, not durations | A sequence that runs to a script finishes before the payment does, and the shutter comes up on a game nobody bought. |
 | Optimistic ownership | Local flag at settlement, replaced by the server's answer | The buyer is entitled the moment payment settles, and the GameKey lands seconds later. Never the source of truth: a reload asks the server. |
 | Where money out lives | `/money`, a third page behind the profile menu | Earnings are cross-studio, so no studio page can hold them, and they are not games you own, so the library can't. Withdrawal goes beside the number it acts on, not in a 264px dropdown. |
 | Withdrawal retry | None, unlike a purchase | An expired intent and a network refusal come back as the same error on the same field. One of them may have moved money, so retrying is the person's call. |
-| Held payouts | Stated, never claimable | They settle by themselves when the wallet first has a Hedera account. A claim button would be a button that does nothing. |
+| Held payouts | ~~Stated, never claimable~~ **Gone with Hedera.** | There is no held state on Arc: every share accrues in the game's own vault and is claimed from `/money`. |
 | When the agent spends | At the wire, an hour before the soonest sale ends. Never on the price event | Two $1 games and $1.20: whichever went on sale first was bought, and the outcome was decided by which studio pressed a button. Waiting costs nothing while a sale is open, and what arrives during the wait is the whole decision. |
 | Where the waiting lives | In the schedule, not in the model's answer | A model that can say "hold for three hours" on a sale ending in one has been handed a way to lose the game. The schedule cannot express that. |
 | A scheduled round | An alarm clock that is deleted and re-run, never replayed | Everything the wait was for happened between setting it and firing it: another sale, another want, a smaller balance. Replaying the plan discards exactly that. |
@@ -325,10 +324,63 @@ _Cleared 2026-10-05: `ARC_OPERATOR_KEY` and `CIRCLE_API_KEY` are both in `.env`.
 | The Gateway deposit | A real step in the trial's ladder, framed as a meter | A chunk is too small to settle on chain, so chunks spend a Gateway balance rather than the wallet. That balance is **not** the wallet balance, so without this every chunk fails for insufficient funds at any wallet size. It is the one place the Arc port adds a step for a person, so it gets its own rung and its own words rather than being bolted onto funding. |
 | How much to deposit | The trial's `worstCase`, minus what is already in, capped at the wallet | Worst case is the most the trial can ever cost and the server caps it at the game's price, so depositing it means the meter cannot run dry mid-game. Interrupting someone *while playing* is the failure this feature exists to avoid. Capped at the wallet because the funding rung only guarantees one chunk, and asking for more than someone has would strand them on a rung they cannot clear. |
 | Two overloads on `gatePhaseFor` | Checkout passes no deposit and gets a type that cannot be `deposit` | The invariant is real, so the signature states it instead of making the call site assert it. Keeps checkout's own `Phase` union honest. |
+| Which chain a wallet write goes to | Arc testnet in Privy's `supportedChains`, and a switch before every send | Unset, Privy's embedded wallet sits on Ethereum mainnet. The first real transaction, the deposit's `approve`, went out as chainId 1 and only failed for lack of mainnet ETH. The provider is fetched **after** the switch, because Privy does not update one that already exists. |
+| Privy's own wallet prompts | Off, app-wide (`showWalletUIs: false`) | Every Arc payment is typed data, which Privy prompts for, so a trial raised a modal over a running game every minute. Safe only while both hold: every request comes from a press on our own screen with the amount shown (or a trial the player started, under a stated ceiling), and uploaded games run on a separate origin with no path to the wallet. |
+| Numbering the money ladder | Named rungs, no "Step N of M" | Whether someone needs funds or a deposit is only learned after sign-in, so any count is a guess. It said "Step 3 of 3" to people who never saw 1 or 2, in checkout too. |
+| Gas on a deposit | $0.01 held back, and asked for at the funding rung | USDC is the gas token, so depositing the whole balance leaves nothing for the deposit's own second transaction. Measured: 0.0036 for both. |
+| Where a trial's leftover deposit shows | A second line in the wallet card on `/money`, only when non-zero | It is the buyer's money and was in none of the figures. Not a third card: the top pair is deliberate and the line would read $0.00 for nearly everyone. Read from its own route, `GET /api/me/gateway`, because it costs a call to Circle and `/api/me` runs on every page. |
+| Uploading a build | `XMLHttpRequest` with a stall timer, then a long wait for the server | `fetch` cannot report upload progress, and a flat ceiling cannot tell a slow uplink from a dead one. The old 90s cap was shorter than the server's own unpacking and pinning alone, which measured 93s and 305s for the same build. |
 
 ### Log
 
 _Newest first._
+
+#### 2026-10-05 (the first browser pass on Arc) — Suparno
+
+The secrets landed, nine of the ten `arc:check*` scripts passed, and the first
+real clicks on Arc found four bugs the scripts structurally could not: every
+one lived between the browser and the chain, and the scripts sign with a raw
+key.
+
+- **The wallet sent on Ethereum mainnet.** The deposit's `approve` went out as
+  chainId 1 to `mainnet.rpc.privy.systems`, decoded from the error: right
+  selector, right spender, right $0.30, wrong chain. Privy had never been told
+  Arc existed, and `sendTransaction` dropped the `chainId` it was handed.
+  Withdrawals and agent funding share that function and would have done the
+  same; neither had been run in a browser on Arc. **Remember the second half:**
+  `switchChain` does not update a provider that already exists, so the provider
+  has to be fetched after the switch. My first fix had them the other way round.
+- **Privy prompted on every trial chunk**, a modal over a running game once a
+  minute. A regression from the port: raw-hash signing never prompted and typed
+  data does, under a dashboard default nothing here overrode. Off now, with the
+  two conditions that make that safe written beside the setting.
+- **A trial opened signed out would have skipped the deposit.** The server sends
+  `gatewayDeposit: null` to nobody, the gate kept that snapshot after sign-in,
+  and the first chunk would have failed for funds the wallet had. Also: the
+  deposit left nothing for its own gas, and the ladder said "Step 3 of 3" to
+  someone who never saw 1 or 2 (checkout did the same, since September).
+- **"$5 in, $3 spent, $1.76 left"** reconciled to the cent: $0.30 went into
+  Gateway, $0.06 was played, $0.24 is still there and was shown nowhere. It is
+  on `/money` now. There is still no way to take it back out; it is spent first
+  by the next trial on any game.
+
+**Publishing a 22.5MB build failed, and the server had actually succeeded.**
+The draft is in the database with both pins and a committed build. The browser
+quit at 90s and never read the reply. `ingestBuild` alone measured 93s and 305s
+for the same build, so the old cap could not be met even with an instant
+upload. Uploads now go over XHR with a stall timer and a real progress panel.
+Priyanshu's streaming fix (`445a7b8`) is what lets the server survive the build
+at all: 143MB peak RSS under a 400MB heap, re-measured on this build.
+
+**Two server problems, both found by measuring rather than guessing, both
+written up in `../CGS-docs/PROGRESS-LOG.md`:** Node 22 racing a dead IPv6
+stack on every database connection (every "Neon is slow" on this machine), and
+Node's 300s `requestTimeout` cutting off slow uploads.
+
+**I published a real test game to close a gap in the checks.**
+`arc:check:publish` uses fake CIDs and never calls `ingestBuild`, so a real
+build and a real publish had never run together. `uploadtest-game-3adbbe05` is
+in the shared catalog until someone runs `npm run game:delist`.
 
 #### 2026-10-04 (the Arc port, this side) — Suparno
 
