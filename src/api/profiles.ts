@@ -61,6 +61,7 @@ export interface WireUserProfile extends WireProfile {
   bio: string | null
   avatarCid?: string | null
   addressShort: string
+  /** @deprecated Always null since the Arc port. There is no account to name. */
   hederaAccountId: string | null
   joinedAt: string
   isSelf: boolean
@@ -155,8 +156,15 @@ export interface WirePurchase {
   priceUsd: number
   priceAsset: string
   assetDecimals: number
-  /** Look it up on the Mirror Node. This is what makes it a receipt. */
+  /** What settled the purchase. The thing that makes this a receipt. */
   settlementTxId: string
+  /**
+   * Where to open it. Built by the server, because which explorer resolves a
+   * transaction is a fact about the chain it is pointed at. This is the field to
+   * link; never assemble an explorer URL on this side.
+   */
+  explorerUrl: string | null
+  /** @deprecated Always null since the Arc port. Nothing raises it. */
   hcsSaleTxId: string | null
   /** Null if the game was removed from storage after the sale. */
   game: (WireProfileGame & { status: string }) | null

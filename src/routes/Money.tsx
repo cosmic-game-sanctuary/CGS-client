@@ -125,11 +125,7 @@ export function Money() {
               <Headline
                 label="In your wallet"
                 value={formatAmount(session.balanceUsd)}
-                note={
-                  session.hederaAccountId
-                    ? `account ${session.hederaAccountId}`
-                    : 'no account on Hedera yet'
-                }
+                note="what you can spend or take out now"
                 tone="wallet"
               />
             </div>
@@ -294,7 +290,9 @@ function Claimable({
     setFailed((f) => Object.fromEntries(Object.entries(f).filter(([id]) => id !== row.gameId)))
     try {
       const result = await claimEarnings(row.gameId)
-      setDone((d) => ({ ...d, [row.gameId]: result.txHash }))
+      // The URL rather than the hash: this map exists to render a link, and the
+      // hash on its own is not something anyone can act on.
+      setDone((d) => ({ ...d, [row.gameId]: result.explorerUrl ?? '' }))
       // Refetched rather than patched locally: the numbers on this screen are
       // read from the contract, and the contract is what just changed.
       onClaimed()
@@ -340,8 +338,19 @@ function Claimable({
               <span className="tnum font-bold">
                 {formatAmount(row.claimable.display)}
               </span>
-              {done[row.gameId] ? (
-                <span className="text-green">claimed</span>
+              {done[row.gameId] !== undefined ? (
+                done[row.gameId] ? (
+                  <a
+                    href={done[row.gameId]}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-green underline decoration-dotted"
+                  >
+                    claimed
+                  </a>
+                ) : (
+                  <span className="text-green">claimed</span>
+                )
               ) : (
                 <Button
                   variant="neutral"

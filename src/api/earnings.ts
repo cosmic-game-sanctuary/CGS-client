@@ -154,6 +154,16 @@ export interface WireClaimResult {
   to: string
   amount: WireMoney
   txHash: string
+  /**
+   * Where to open the release, and the vault it came out of. Both built by the
+   * server, which is the only side that knows the chain it is pointed at.
+   *
+   * Worth linking rather than storing quietly: "the contract paid you, not us"
+   * is the claim this whole screen makes, and an unopenable hash is an assertion
+   * in exactly the place the product promises evidence.
+   */
+  explorerUrl: string | null
+  vaultUrl: string | null
 }
 
 /**

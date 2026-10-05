@@ -9,7 +9,7 @@ import {
   type WirePromotion,
 } from '@/api/promotions'
 import { ApiError, errorMessage } from '@/lib/api'
-import { formatAmount, formatDate } from '@/lib/format'
+import { formatAmount, formatDate, truncateAddress } from '@/lib/format'
 import type { WireManageView } from '@/api/manage'
 
 /**
@@ -155,10 +155,20 @@ function RunningSale({
 
       {/* The public record of the sale opening. Worth surfacing here and
           nowhere a shopper looks: it is the evidence a developer would point
-          at, not something a buyer wants in their way. */}
+          at, not something a buyer wants in their way.
+
+          `hcsStartTxId` is a stale name holding current data: it is an Arc
+          transaction hash now, not an HCS message id. Truncated because a
+          66-character hash set across a panel is noise, and not linked because
+          the server does not send an explorer URL for a sale the way it does
+          for a receipt or a claim. Building one here would mean this file
+          deciding which chain the server is on. Raised in PROGRESS-LOG. */}
       {promotion.hcsStartTxId ? (
-        <p className="mt-1 font-mono text-[11px] break-all text-ink-faint">
-          Announced as {promotion.hcsStartTxId}
+        <p
+          title={promotion.hcsStartTxId}
+          className="mt-1 font-mono text-[11px] text-ink-faint"
+        >
+          Announced on chain as {truncateAddress(promotion.hcsStartTxId, 10, 8)}
         </p>
       ) : null}
 

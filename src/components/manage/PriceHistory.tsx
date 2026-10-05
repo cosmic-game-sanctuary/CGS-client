@@ -66,7 +66,7 @@ export function PriceHistory({
                   target="_blank"
                   rel="noreferrer"
                   className="ml-auto min-w-0 truncate font-mono text-[11px] text-ink-faint underline decoration-dotted hover:text-ink"
-                  title={`${point.chainTxHash} — open on the block explorer`}
+                  title={`${point.chainTxHash}. Opens on the block explorer.`}
                 >
                   {point.chainTxHash}
                 </a>

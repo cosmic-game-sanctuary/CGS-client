@@ -91,9 +91,24 @@ export function Receipts({ signedIn }: { signedIn: boolean }) {
                       A game that has since been removed
                     </span>
                   )}
-                  <span className="block truncate font-mono text-[11px] text-ink-faint">
-                    {row.settlementTxId}
-                  </span>
+                  {/* The hash is the evidence, so it stays visible even when
+                      there is nowhere to send it: a receipt nobody can check is
+                      the thing this row exists not to be. */}
+                  {row.explorerUrl ? (
+                    <a
+                      href={row.explorerUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={row.settlementTxId}
+                      className="block truncate font-mono text-[11px] text-ink-faint underline decoration-dotted hover:text-ink"
+                    >
+                      {row.settlementTxId}
+                    </a>
+                  ) : (
+                    <span className="block truncate font-mono text-[11px] text-ink-faint">
+                      {row.settlementTxId}
+                    </span>
+                  )}
                 </span>
 
                 {row.key?.serial ? (
