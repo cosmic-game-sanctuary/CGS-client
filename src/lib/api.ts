@@ -188,6 +188,8 @@ type RequestOptions = {
   /** Skip the Authorization header even when signed in. */
   anonymous?: boolean
   signal?: AbortSignal
+  /** Override the default 90s ceiling. For calls that do chain work. */
+  timeoutMs?: number
 }
 
 function buildUrl(path: string, query?: RequestOptions['query']) {
@@ -203,7 +205,7 @@ export async function request<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
-  const { method = 'GET', body, form, query, anonymous, signal } = options
+  const { method = 'GET', body, form, query, anonymous, signal, timeoutMs } = options
 
   const headers: Record<string, string> = {}
   if (!anonymous) {
@@ -221,7 +223,14 @@ export async function request<T>(
   // genuinely stalled has to become an error a person can see and retry.
   // 90s clears the slowest honest case (settlement plus a background split
   // run behind it) with room to spare.
-  const REQUEST_TIMEOUT_MS = 90_000
+  //
+  // **A caller may ask for longer, and publishing has to.** Locking a draft
+  // deploys the game's vault and writes the registry, which is two chain
+  // transactions, and a build upload is tens of megabytes over whatever link
+  // the developer happens to have. Neither fits in a ceiling chosen for a
+  // payment. See `requestUpload` for the upload half, which cannot use this
+  // function at all.
+  const REQUEST_TIMEOUT_MS = timeoutMs ?? 90_000
   const timeout = new AbortController()
   const bell = setTimeout(() => timeout.abort(), REQUEST_TIMEOUT_MS)
   // Honour a caller's own signal too — abort if either fires.
@@ -391,4 +400,137 @@ export async function requestOptional<T>(
     if (error instanceof ApiError && error.status === 404) return undefined
     throw error
   }
+}
+
+/**
+ * A multipart upload that can say how far along it is.
+ *
+ * **`XMLHttpRequest`, deliberately, in a file where everything else is
+ * `fetch`.** `fetch` cannot report upload progress: there is no event for it,
+ * and the streaming-request workaround needs `duplex: 'half'` and is not
+ * usable across the browsers this has to work in. XHR has had
+ * `upload.onprogress` for fifteen years. So the one call that genuinely needs
+ * it uses it, and the rest of the file stays on `fetch`.
+ *
+ * **The timing is a stall timer, not a deadline, and that is the whole point.**
+ * A build is tens of megabytes and the developer's upstream is theirs, not
+ * ours: 22.5MB over a slow domestic connection is minutes of honest work, and
+ * a flat ceiling cannot tell that apart from a dead socket. So nothing is
+ * capped while bytes are moving. The clock only runs when nothing has happened,
+ * and it resets on every progress event.
+ *
+ * After the last byte goes up the request is not over, and the wait that
+ * follows is the longest part of publishing: the server unpacks the zip, runs
+ * the moderation gate and pins the build to IPFS **twice**, once as a
+ * directory for provenance and once as a zip for delivery. Nothing is
+ * observable from here during that, so `onSent` exists to let the UI stop
+ * showing a percentage and say what is actually happening instead.
+ */
+export async function requestUpload<T>(
+  path: string,
+  form: FormData,
+  options: {
+    /** 0 to 1, bytes accepted by the socket. Fires many times. */
+    onProgress?: (fraction: number) => void
+    /** Every byte is up. From here the server is working and we are blind. */
+    onSent?: () => void
+    /** With no progress at all for this long, give up. */
+    stallMs?: number
+    /** How long to wait after the upload finishes, while the server works. */
+    serverMs?: number
+    signal?: AbortSignal
+  } = {},
+): Promise<T> {
+  const {
+    onProgress,
+    onSent,
+    stallMs = 60_000,
+    // Ten minutes. Two IPFS pins of the same build, and Pinata is not fast.
+    serverMs = 600_000,
+    signal,
+  } = options
+
+  const token = await getToken()
+
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', buildUrl(path))
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    // No Content-Type: the browser has to add the multipart boundary itself.
+
+    let bell: number | undefined
+    const stopClock = () => {
+      if (bell !== undefined) clearTimeout(bell)
+      bell = undefined
+    }
+    const armClock = (ms: number, message: string) => {
+      stopClock()
+      bell = window.setTimeout(() => {
+        xhr.abort()
+        reject(new ApiError(0, 'NETWORK', message))
+      }, ms)
+    }
+
+    const cleanUp = () => {
+      stopClock()
+      signal?.removeEventListener('abort', onCallerAbort)
+    }
+    const onCallerAbort = () => {
+      cleanUp()
+      xhr.abort()
+    }
+    signal?.addEventListener('abort', onCallerAbort)
+
+    armClock(stallMs, 'The upload stalled before it started. Check your connection and try again.')
+
+    xhr.upload.onprogress = (event) => {
+      if (!event.lengthComputable) return
+      // Re-armed on every chunk, so a slow but live upload never trips it.
+      armClock(stallMs, 'The upload stopped partway. Nothing was published, so it is safe to retry.')
+      onProgress?.(event.loaded / event.total)
+    }
+
+    xhr.upload.onload = () => {
+      onProgress?.(1)
+      onSent?.()
+      armClock(
+        serverMs,
+        'The build went up, but the server is still working on it. Check your library in a minute before retrying, in case the draft was created.',
+      )
+    }
+
+    xhr.onload = () => {
+      cleanUp()
+      const payload = safeParse(xhr.responseText) as
+        | { error?: { code?: string; message?: string; details?: unknown } }
+        | undefined
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve((payload ?? {}) as T)
+        return
+      }
+      reject(
+        new ApiError(
+          xhr.status,
+          payload?.error?.code ?? 'INTERNAL',
+          payload?.error?.message ?? `Upload failed (${xhr.status}).`,
+          payload?.error?.details,
+        ),
+      )
+    }
+
+    xhr.onerror = () => {
+      cleanUp()
+      reject(new ApiError(0, 'NETWORK', 'Could not reach the server. Is it running?'))
+    }
+
+    // Fired by our own `abort()` above, where the rejection has already been
+    // sent. Only a genuine user cancel reaches the reject below.
+    xhr.onabort = () => {
+      cleanUp()
+      reject(new ApiError(0, 'NETWORK', 'The upload was cancelled.'))
+    }
+
+    xhr.send(form)
+  })
 }

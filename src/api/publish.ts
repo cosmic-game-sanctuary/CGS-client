@@ -1,4 +1,4 @@
-import { request } from '@/lib/api'
+import { request, requestUpload } from '@/lib/api'
 import type { WireGame } from '@/api/wire'
 
 /**
@@ -51,7 +51,28 @@ export interface UploadInput {
   coverMediaIndex?: number
 }
 
-export function uploadGame(input: UploadInput): Promise<WireDraft> {
+/**
+ * Where publishing actually is, for a screen that wants to say so.
+ *
+ * Only the first two are observable from here. Everything from `pinning`
+ * onwards is the server working with nothing coming back down the wire, so
+ * these are named from what it is known to be doing rather than measured.
+ */
+export type PublishStage =
+  | 'uploading'
+  | 'pinning'
+  | 'listing'
+
+export interface PublishProgress {
+  stage: PublishStage
+  /** 0 to 1, and only meaningful while `uploading`. */
+  fraction: number
+}
+
+export function uploadGame(
+  input: UploadInput,
+  onProgress?: (progress: PublishProgress) => void,
+): Promise<WireDraft> {
   const form = new FormData()
   form.append('studioId', input.studioId)
   form.append('title', input.title)
@@ -70,9 +91,26 @@ export function uploadGame(input: UploadInput): Promise<WireDraft> {
     form.append('coverMediaIndex', String(input.coverMediaIndex))
   }
 
-  return request<WireDraft>('/api/games', { method: 'POST', form })
+  return requestUpload<WireDraft>('/api/games', form, {
+    onProgress: (fraction) => onProgress?.({ stage: 'uploading', fraction }),
+    // The bytes are up and the server now unpacks, moderates and pins the
+    // build twice. That is most of the wall-clock time of a publish and none
+    // of it is visible, so the screen stops counting and says what is
+    // happening instead of parking a bar at 100%.
+    onSent: () => onProgress?.({ stage: 'pinning', fraction: 1 }),
+  })
 }
 
+/**
+ * The irreversible half, and slow for a different reason than the upload.
+ *
+ * No bytes move here. It deploys the game's own `SplitVault` and writes the
+ * listing to `GameRegistry`: two chain transactions, which comfortably outlast
+ * the 90s ceiling meant for a payment.
+ */
 export function publishDraft(gameId: string): Promise<WireGame> {
-  return request<WireGame>(`/api/games/${gameId}/publish`, { method: 'POST' })
+  return request<WireGame>(`/api/games/${gameId}/publish`, {
+    method: 'POST',
+    timeoutMs: 240_000,
+  })
 }
