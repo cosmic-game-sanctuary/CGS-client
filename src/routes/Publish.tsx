@@ -26,7 +26,12 @@ import { cn } from '@/lib/utils'
 import { errorMessage } from '@/lib/api'
 import { getStudio } from '@/api/games'
 import { InviteLink } from '@/components/studio/InviteLink'
-import { publishDraft, uploadGame, type SplitInput } from '@/api/publish'
+import {
+  publishDraft,
+  uploadGame,
+  type PublishProgress,
+  type SplitInput,
+} from '@/api/publish'
 import { useSession } from '@/auth/session'
 import { StudioSetup } from '@/routes/StudioSetup'
 import type { MediaItem, Studio } from '@/mocks/types'
@@ -140,6 +145,8 @@ export function Publish() {
   }, [myStudio, myHandle])
 
   const [publishing, setPublishing] = useState(false)
+  // Where publishing has got to, so the screen can say. Null when idle.
+  const [progress, setProgress] = useState<PublishProgress | null>(null)
   const [publishError, setPublishError] = useState<string | null>(null)
   // A draft that uploaded but hasn't been published. Kept so a failure on the
   // second call doesn't re-upload the build on retry — it is already pinned.
@@ -264,6 +271,9 @@ export function Publish() {
     if (!myStudio || !build?.file) return
     setPublishing(true)
     setPublishError(null)
+    // A retry that already has a draft skips the upload entirely, so it starts
+    // at the stage it will actually be in rather than flashing "uploading".
+    setProgress({ stage: draft ? 'listing' : 'uploading', fraction: 0 })
 
     try {
       // Upload first, unless a previous attempt already got this far. The
@@ -282,7 +292,7 @@ export function Publish() {
           build: build.file,
           media: mediaFiles,
           coverMediaIndex: coverIndex,
-        })
+        }, setProgress)
         current = {
           id: uploaded.id,
           slug: uploaded.slug,
@@ -291,8 +301,9 @@ export function Publish() {
         setDraft(current)
       }
 
-      // The irreversible half: locks the splits, mints the token, writes the
-      // public listing.
+      // The irreversible half: locks the splits, deploys the vault and writes
+      // the public listing. No bytes move, so there is nothing to measure.
+      setProgress({ stage: 'listing', fraction: 1 })
       const game = await publishDraft(current.id)
 
       setSent(current.invited)
@@ -306,6 +317,7 @@ export function Publish() {
       setPublishError(errorMessage(error))
     } finally {
       setPublishing(false)
+      setProgress(null)
     }
   }
 
@@ -540,12 +552,8 @@ export function Publish() {
           </div>
         ) : null}
 
-        {publishing ? (
-          <p className="mt-6 font-mono text-[11px] leading-relaxed text-ink-soft">
-            {draft
-              ? 'Locking the splits and minting the token.'
-              : 'Uploading the build and pinning it. Large builds take a while.'}
-          </p>
+        {publishing && progress ? (
+          <PublishSteps progress={progress} buildBytes={build?.file.size ?? 0} />
         ) : null}
 
         {/* Nav */}
@@ -902,6 +910,102 @@ function Published({
         </Link>
       </main>
       <SiteFooter />
+    </div>
+  )
+}
+
+/**
+ * What publishing is doing, while it does it.
+ *
+ * Publishing was one line of text that never changed, and it read as a hang
+ * for the several minutes it genuinely takes: a build is tens of megabytes
+ * going up a domestic connection, and then the server pins it to IPFS twice.
+ * With nothing moving on screen there is no way to tell that apart from a
+ * broken upload, which is exactly the complaint.
+ *
+ * Only the first step has a real number behind it. The other two are the
+ * server working with nothing coming back down the wire, so they are marked
+ * as underway rather than given a fake percentage. A bar that invents
+ * progress is worse than no bar, because it sets a pace it cannot keep.
+ */
+function PublishSteps({
+  progress,
+  buildBytes,
+}: {
+  progress: PublishProgress
+  buildBytes: number
+}) {
+  const order: PublishProgress['stage'][] = ['uploading', 'pinning', 'listing']
+  const current = order.indexOf(progress.stage)
+  const pct = Math.round(progress.fraction * 100)
+  const sentMb = ((buildBytes * progress.fraction) / 1_000_000).toFixed(1)
+  const totalMb = (buildBytes / 1_000_000).toFixed(1)
+
+  const label: Record<PublishProgress['stage'], string> = {
+    uploading: 'Sending the build',
+    pinning: 'Unpacking and pinning to IPFS',
+    listing: 'Locking the splits and listing on chain',
+  }
+  const note: Record<PublishProgress['stage'], string> = {
+    uploading: `${sentMb} of ${totalMb} MB`,
+    pinning: 'The slowest step, and nothing to see. A minute or two.',
+    listing: 'Two transactions. Nearly done.',
+  }
+
+  return (
+    <div className="mt-6 rounded-card border-2 border-ink bg-paper-sunk px-5 py-4">
+      <ol className="flex list-none flex-col gap-2.5 p-0">
+        {order.map((stage, index) => {
+          const done = index < current
+          const live = index === current
+          return (
+            <li key={stage} className="flex items-start gap-2.5">
+              <span
+                aria-hidden
+                className={cn(
+                  'mt-0.5 grid h-4 w-4 shrink-0 place-items-center rounded-full border-2 border-ink font-mono text-[9px] leading-none',
+                  done && 'bg-green text-paper',
+                  live && 'bg-yellow text-ink',
+                  !done && !live && 'bg-paper text-ink-faint',
+                )}
+              >
+                {done ? '+' : ''}
+              </span>
+              <span className="min-w-0">
+                <span
+                  className={cn(
+                    'block font-mono text-[11px] leading-relaxed',
+                    live ? 'font-bold text-ink' : 'text-ink-soft',
+                  )}
+                >
+                  {label[stage]}
+                  {live && stage === 'uploading' ? ` · ${pct}%` : null}
+                </span>
+                {live ? (
+                  <span className="block font-mono text-[10px] text-ink-soft">
+                    {note[stage]}
+                  </span>
+                ) : null}
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+
+      {/* The one honest bar. Only while bytes are actually moving. */}
+      {progress.stage === 'uploading' ? (
+        <div className="mt-3 h-2 w-full overflow-hidden rounded-full border-2 border-ink bg-paper">
+          <div
+            className="h-full bg-green transition-[width] duration-200"
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+      ) : null}
+
+      <p className="mt-3 font-mono text-[10px] leading-relaxed text-ink-soft">
+        Leaving this page cancels it. Nothing is public until the last step
+        finishes.
+      </p>
     </div>
   )
 }
