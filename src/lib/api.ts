@@ -24,9 +24,21 @@ export type ApiErrorCode =
   | 'SPLITS_LOCKED'
   | 'PAYMENT_REQUIRED'
   | 'PAYMENT_FAILED'
-  /** The frozen transaction aged out before it settled. Nothing was charged. */
+  /** The authorization aged out before it settled. Nothing was charged. */
   | 'PAYMENT_INTENT_EXPIRED'
-  | 'PAYMENT_SIGNATURE_INVALID'
+  /**
+   * Settlement didn't resolve inside the wait window. **Not a failure** — the
+   * payment may still land, so this is the one refusal that must never be
+   * treated as "nothing happened". Retry by completing the *same* intent; see
+   * `api/purchase.ts`.
+   *
+   * It arrives as `409`. It used to be `202`, which is a 2xx, so a client
+   * checking `response.ok` read the error envelope as a grant and booted the
+   * game on a payment that may have taken the money.
+   */
+  | 'PAYMENT_PENDING'
+  /** That wallet already holds the key. Nothing was charged. */
+  | 'ALREADY_OWNED'
   /**
    * A body bigger than the server accepts, and a body that isn't JSON. Both
    * used to arrive as `INTERNAL`, including for an oversized build upload,
@@ -57,6 +69,32 @@ export type ApiErrorCode =
   | 'INVITE_EMAIL_MISMATCH'
   /** A cloud save changed elsewhere since you read it. `details` has both sides. */
   | 'SAVE_CONFLICT'
+  /** Nothing has accrued in the vault for this payee yet. */
+  | 'NOTHING_TO_CLAIM'
+  /** The agent: absent, already created, retired, or not waiting on an answer. */
+  | 'NO_AGENT'
+  | 'AGENT_EXISTS'
+  | 'AGENT_ALREADY_RETIRED'
+  | 'NOT_ASKABLE'
+  /**
+   * Over the ceiling published on the agent's own ENS name (`cgs:maxSpend`).
+   * Enforced on chain rather than advertised, so this is a refusal, not advice.
+   */
+  | 'ABOVE_MANDATE'
+  /** Groq was unreachable, so the deterministic plan ran instead. */
+  | 'MODEL_UNAVAILABLE'
+  /** Already dealt with by the time this arrived. Moderation, or an agent question. */
+  | 'ALREADY_RESOLVED'
+  | 'HANDLE_TAKEN'
+  | 'STUDIO_EXISTS'
+  | 'WITHDRAW_FAILED'
+  | 'UPLOAD_REJECTED'
+  /**
+   * `503`, and the one code here that is nobody's fault but ours: the server is
+   * missing the Arc key or contract addresses it needs to write to the chain.
+   * Not a thing a person can fix by retrying, so say so rather than offering to.
+   */
+  | 'CHAIN_NOT_CONFIGURED'
   | 'RATE_LIMITED'
   | 'INTERNAL'
   | 'NETWORK'
