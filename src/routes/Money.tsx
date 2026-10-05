@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useState, type CSSProperties } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from 'react'
 import { Link } from 'react-router-dom'
 import { Freehand } from '@/components/icons/Freehand'
 import { SiteFooter } from '@/components/SiteFooter'
@@ -11,6 +17,7 @@ import {
   type WireGameClaim,
   type WirePersonalEarnings,
 } from '@/api/earnings'
+import { getSetAside } from '@/api/trials'
 import { errorMessage } from '@/lib/api'
 import { formatAmount } from '@/lib/format'
 import { signIn, useSession } from '@/auth/session'
@@ -31,8 +38,10 @@ import { signIn, useSession } from '@/auth/session'
  * out, and minus anything still held. Showing one and calling it the other is
  * the mistake this layout exists to avoid.
  *
- * Held money has no claim button and shouldn't get one: it goes out on its own
- * the moment the wallet it belongs to has a Hedera account.
+ * There is a third place your money can be, and it is shown inside the wallet
+ * figure rather than as a figure of its own: whatever a trial deposit put into
+ * Circle Gateway and was not played. It is yours, it is not in the wallet, and
+ * for most people it is zero, which is why it only appears when it is not.
  */
 export function Money() {
   const session = useSession()
@@ -65,6 +74,30 @@ export function Money() {
   }, [userId, session.balanceUnits, refresh])
 
   const current = loaded?.userId === userId ? loaded : null
+
+  // The unplayed rest of a trial deposit. Its own fetch, so a slow or failed
+  // answer from Circle cannot hold up or break the earnings above it, and
+  // tagged with the user like everything else here.
+  const [setAside, setSetAside] = useState<{
+    userId: string
+    units: number
+  } | null>(null)
+  useEffect(() => {
+    if (!userId) return
+    const controller = new AbortController()
+    getSetAside(controller.signal)
+      .then((read) =>
+        setSetAside({ userId, units: Number(read.availableUnits) }),
+      )
+      .catch(() => {
+        // "Circle could not be asked" is not "there is nothing there". Showing
+        // nothing is honest; showing a zero would not be.
+      })
+    return () => controller.abort()
+    // A deposit moves money out of the wallet, so the wallet balance changing
+    // is the cheapest sign this is stale too.
+  }, [userId, session.balanceUnits, refresh])
+  const asideUnits = setAside?.userId === userId ? setAside.units : 0
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -127,6 +160,18 @@ export function Money() {
                 value={formatAmount(session.balanceUsd)}
                 note="what you can spend or take out now"
                 tone="wallet"
+                aside={
+                  asideUnits > 0 ? (
+                    <>
+                      Plus{' '}
+                      <b className="tnum text-ink">
+                        {formatAmount(asideUnits / 10 ** session.assetDecimals)}
+                      </b>{' '}
+                      set aside for trials. Your next one uses it first, on
+                      any game.
+                    </>
+                  ) : null
+                }
               />
             </div>
 
@@ -377,11 +422,14 @@ function Headline({
   value,
   note,
   tone,
+  aside,
 }: {
   label: string
   value: string | null
   note: string
   tone?: 'wallet'
+  /** A second line under the note, for money that belongs beside this figure. */
+  aside?: ReactNode
 }) {
   return (
     <div
@@ -402,6 +450,11 @@ function Headline({
         </p>
       )}
       <p className="mt-2 font-mono text-[11px] text-ink-soft">{note}</p>
+      {aside ? (
+        <p className="mt-1.5 border-t-2 border-dashed border-ink-faint pt-1.5 font-mono text-[11px] leading-relaxed text-ink-soft">
+          {aside}
+        </p>
+      ) : null}
     </div>
   )
 }

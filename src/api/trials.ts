@@ -90,6 +90,27 @@ export interface GatewayDeposit {
   needsDeposit: boolean
 }
 
+/** What is sitting in Gateway for this person, across every game. */
+export interface WireSetAside {
+  /** A string: an integer amount, not ours to round. */
+  availableUnits: string
+  availableUsd: number
+  asset: string
+  assetDecimals: number
+}
+
+/**
+ * `GET /api/me/gateway`. The unplayed rest of a trial deposit.
+ *
+ * Separate from `/api/me` because the server has to ask Circle for it, and
+ * `/api/me` runs on every page. A `503 GATEWAY_UNAVAILABLE` means Circle could
+ * not be asked, which is not the same as nothing being there, so callers
+ * should show nothing rather than a zero.
+ */
+export function getSetAside(signal?: AbortSignal): Promise<WireSetAside> {
+  return request<WireSetAside>('/api/me/gateway', { signal })
+}
+
 /** Public. The config is anyone's to read; the numbers about you are not. */
 export function getTrial(
   gameId: string,

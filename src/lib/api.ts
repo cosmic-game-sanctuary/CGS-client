@@ -95,6 +95,8 @@ export type ApiErrorCode =
    * Not a thing a person can fix by retrying, so say so rather than offering to.
    */
   | 'CHAIN_NOT_CONFIGURED'
+  /** Circle could not be asked for a Gateway balance. Not the same as zero. */
+  | 'GATEWAY_UNAVAILABLE'
   | 'RATE_LIMITED'
   | 'INTERNAL'
   | 'NETWORK'
