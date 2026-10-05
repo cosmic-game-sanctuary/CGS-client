@@ -161,9 +161,9 @@ GET  /api/agents/:id               # balance, trigger, status
 POST /api/reports                  # moderation
 ```
 
-Every endpoint is ordinary REST **except** `GET /api/games/:id/download`, which uses **x402**: it returns HTTP `402` with payment requirements instead of the file; you sign a payment and retry the request. **Kai hands us a helper for this — don't build it from scratch, ask for a walkthrough when we get there.**
+Every endpoint is ordinary REST **except** `GET /api/games/:id/download`, which uses **x402**: it returns HTTP `402` with payment requirements instead of the file; you sign a payment and retry the request. Two calls do it, `pay/prepare` then `pay/complete`, and what gets signed is EIP-712 typed data passed through **whole and unmodified**. See `INTEGRATION.md` §4 and `api/purchase.ts`.
 
-Backend stack, for context when generating client types: Node + TypeScript, Express, Postgres via Drizzle, `@hashgraph/sdk` for payments and GameKey NFTs, Privy server SDK for the agent wallet, ENSv2 on Sepolia, IPFS via Pinata served from `ipfs.io`.
+Backend stack, for context when generating client types: Node + TypeScript, Express, Postgres via Drizzle, **viem against Arc** for payments, GameKeys, vaults and the listing registry, Circle's facilitator for settlement and Circle Gateway for trial chunks, Privy server SDK for the agent wallet, ENSv2 on Sepolia, IPFS via Pinata. Hedera is gone; so are `@hashgraph/sdk`, HTS, HCS and the Mirror Node.
 
 ### The current phase — read this before proposing anything
 
@@ -188,39 +188,39 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 
 ### Current status
 
-**Stage:** Integrated against the live API. Money, GameKeys, builds, invites, payouts, withdrawals, sales and paid trials are all real and tested in a browser. **The agent now makes a real contested choice** — two games on sale, budget for one, deferred to the wire and decided there. Four smaller cases are still unrun; see Next up.
+**Stage:** Integrated against the live API, and **ported from Hedera to Arc** (4 Oct). Money, GameKeys, builds, invites, claims, withdrawals, sales and paid trials are all real; everything but the Arc port itself was tested in a browser. **The agent now makes a real contested choice** — two games on sale, budget for one, deferred to the wire and decided there. Four smaller cases are still unrun; see Next up.
+
+> **The chain changed under this repo.** Hedera is gone from CGS-server entirely: no HTS, no HCS, no Mirror Node, no `@hiero-ledger/sdk`. Money settles on **Arc** (Circle's EVM L1, chain `5042002`, where USDC is the gas token), ownership is an ERC-721 `GameKey`, splits are an immutable `SplitVault` per game, the agent reads `GameRegistry` events instead of an HCS topic, and its identity is ERC-8004. Contracts live in the fourth repo, **`CGS-contracts`** (Foundry, read-only to us). Three consequences that bite: **a buyer pays no gas** (Circle's facilitator covers it, so a wallet holding exactly the price can buy), **payments are EIP-712 typed data** rather than raw hashes, and **never build an explorer URL on this side** — the server sends one wherever it returns a transaction, because which explorer resolves it is a fact about the chain the server is pointed at.
 
 **The 11 Sep testing round is written and mostly browser-verified** (see the log entry below): the trial stops the frame instead of covering it, "Try it" signs in through our own screen before Privy's, a slow studio request can't render as "not found", the agent can claim an ENS name, and two roster/splits bugs found in that same browser pass are also fixed. The only remaining item, `APP_URL` + SPF, is not code — it is waiting on a deployed host and a DNS record.
 
 > **The database is shared and a migration is a deploy.** Both sides point at one Neon database, so branching code does not branch the schema. Stage 18 dropped `wishlist_agents.target_game_id`, which broke the *other* checkout with no code change on that side. If the server throws `column … does not exist`, pull before debugging.
-**Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@privy-io/react-auth`, `@iconify-json/streamline-freehand` (dev)
+**Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@privy-io/react-auth`, **viem** (direct as of 4 Oct, for the two Gateway deposit calls; it was already in the tree as Privy's own dependency and dedupes to one copy), `@iconify-json/streamline-freehand` (dev)
 **Screens built:** catalog (`/`), listing (`/game/:slug`), manage (`/game/:slug/manage`), checkout overlay, player (`/play/:slug`), publish (`/publish`), studio (`/studio/:id` and `/studio/new`), library (`/library`), money (`/money`), profile (`/u/:handle`), invite (`/invite/:id`), 404
 **Deployed:** no. Needs `VITE_PREVIEW_ORIGIN` (§3).
 
 **Working end to end, against the real backend:**
 - **Try before you buy:** a paid trial runs the real build by the minute, the next chunk is bought while the current one still runs, and every cent comes off the price when you buy from inside the session.
 - **Put it on sale:** a scheduled price that reverts itself, with a countdown on the listing that is checkable against the public topic.
-- **Buy:** browse → listing → buy → Privy sign-in → add funds → **pay, signed by your own wallet in this tab** → x402 settles on Hedera → the GameKey mints → the game boots in the same tab. Verified on testnet: $3.00 left the buyer, $1.71 came back as their split share, the key minted with serial 1.
-- **Publish:** make a studio (real ENS subname on Sepolia) → drop a zip → see it running → details, cover, price → splits, including someone who has only an email → publish. The build is pinned to IPFS and a real HTS token is created.
+- **Buy:** browse → listing → buy → Privy sign-in → add funds → **pay, signed by your own wallet in this tab** → x402 settles on Arc → the GameKey mints → the game boots in the same tab. The buyer pays no network fee, so a wallet holding exactly the price is enough.
+- **Publish:** make a studio (real ENS subname on Sepolia) → drop a zip → see it running → details, cover, price → splits, including someone who has only an email → publish. The build is pinned to IPFS, the game's own `SplitVault` is deployed, and it is written to `GameRegistry`.
 - **Play:** the build is fetched from the API, unpacked in the browser and run on the isolated build origin. Same pipeline as the publish preview.
 - **Say something:** verified-purchase reviews, a studio reply on any of them, deleting your own, and reporting either.
 - **Get invited:** an emailed link lands on `/invite/:id`, accepting backfills every split naming that person, and the money held while they hadn't claimed goes out.
-- **Get paid, and take it out:** earnings across every team on `/money`, the studio's own on its page, and a withdrawal to any address, signed in the tab.
+- **Get paid, and take it out:** earnings across every team on `/money`, the studio's own on its page, and a withdrawal to any address, signed in the tab. Money is **claimed from each game's vault** now rather than waiting on a payout, and we pay the gas for the claim because gas is USDC and a developer whose first earnings are still in the vault cannot afford to release them.
 
-**Still on mocks:** the agent, and nothing else. `src/mocks/games.ts` survives for `mediaFor` and `mocks/types.ts`, which is the view model every component is written against.
+**Still on mocks:** nothing. `src/mocks/games.ts` survives for `mediaFor` and `mocks/types.ts`, which is the view model every component is written against.
 
 `npm run lint` and `npm run build` are both clean.
 
-**Next up.** Sales and trials are done, so **the agent is the whole remaining list.** It is fully built on the server (Stages 17 to 19), so this is a frontend-only job with nothing blocking it. `../CGS-docs/INTEGRATION.md` §18 is the contract and §20 is Priyanshu's own suggestion for the shape, worth reading before disagreeing with it.
+**Next up.** The Arc punch list (`../CGS-docs/INTEGRATION.md` §19b) is **done as of 4 Oct** — see the log entry below. What is left is testing it, and the two secrets that blocks on.
 
-0. **Contract catch-up first, same as before W6.5.** Small, and two items are already silently wrong on screen:
-   - `POST /api/agents` and `GET /api/agents/:id` are **gone, 404**. `src/mocks/agent.ts` and `AgentPanel` on the listing now point at nothing.
-   - Three new notification types (`agent_purchased`, `agent_expired`, `agent_asked`) have no copy, so `adaptNotification` drops them. Safe, but invisible.
-   - The wishlist row needs `agentMaxUnits`, `agentNote`, `agent`. (`WireGame.promotion` is done, from W12.)
+0. ~~**Contract catch-up.**~~ **Stale and now corrected.** This list used to claim `POST /api/agents` and `GET /api/agents/:id` were 404 and that `src/mocks/agent.ts` and `AgentPanel` pointed at nothing. **All three were already untrue when written:** the agent module is on `/api/me/agent`, `src/mocks/agent.ts` is deleted, and `components/agent/` is real. The three agent notification types have copy. Left here as a note rather than deleted, because the wrong version of it got repeated across repos before anyone checked the code.
 1. ~~**W12 sales.**~~ **Done, tested 2026-09-08.** See the log entry below. **One gap, and it is the server's:** `promotion` is on the game detail route only, so a catalog card shows the discounted price (which is the game's real price while a sale runs) but cannot say it is discounted.
 2. ~~**W13 paid trials.**~~ **Done, tested 2026-09-08.** Two server changes were needed and are on `frontend-integration` in CGS-server. See the log entry below.
 3. ~~**W9 the agent, rebuilt as 1:N.**~~ **The headline case works.** Creating, funding, setting a want, the deferral and the contested round are all verified: two games on sale at once against a budget for one, and it waited, then chose. The decision rule was rewritten on 9 Sep after the first version turned out to make that round unreachable. **Still unrun: the second wire, the plain price cut, ask-first and the wind-down.** See both log entries below. Testing needs `GROQ_API_KEY` and the default hour in `AGENT_PURCHASE_BUFFER_MS`, where a 70-minute sale decides in 10.
-4. Then likes and comments, which have API modules and no UI, then Impeccable per screen and swipe discovery if there is time.
+4. **The Arc port, on this side.** Done and not browser-tested: the Gateway deposit step, the `PAYMENT_PENDING` retry, ERC-8004 identity on `/agent`, server-sent explorer links, and the HBAR removal. **Blocked on two secrets, not on code** — see Blockers.
+5. Then likes and comments, which have API modules and no UI, then Impeccable per screen and swipe discovery if there is time.
 
 **Untested:** cloud saves (no build we have writes to storage) and the failed-payout path (nothing has failed yet).
 
@@ -254,7 +254,7 @@ src/routes/               Catalog, GameListing, ManageGame, Player, Publish,
                           InviteAccept, NotFound
 ```
 
-Integration seams are marked `TODO(integration)` — grep for it. The live ones are the agent (`POST /api/agents`, `mocks/agent.ts`, `AgentPanel`) and Privy's own funding UI, which replaces the dev faucet before any deploy. **The rest are stale**, left in `src/mocks/` and the publish flow by code that was integrated around them; `src/mocks/notifications.ts` is dead and imported by nothing.
+Integration seams are marked `TODO(integration)` — grep for it. The only live one is Privy's own funding UI, which replaces the dev faucet before any deploy. **The rest are stale**, left in `src/mocks/` and the publish flow by code that was integrated around them; `src/mocks/notifications.ts` is dead and imported by nothing.
 
 ### Running a real game build in the page
 
@@ -280,7 +280,7 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 
 | Who | Blocked on | Since | Needs |
 |---|---|---|---|
-| — | — | — | — |
+| Both | **Every chain write 503s locally.** `ARC_OPERATOR_KEY` and `CIRCLE_API_KEY` are not in `.env` | 2026-10-04 | Two secrets from Priyanshu. The operator key **must be the one that deployed `CGS-contracts`** — `GameKey`'s minter and `GameRegistry`'s operator are fixed to the deploying address forever, so a fresh key is not a substitute. The Circle key is free from console.circle.com, and without it settling to a vault is refused (the keyless trial signs with the key controlling `payTo`, and a vault has no key). Reads, the catalog, the listing and the agent's event watching all work without either. |
 
 ### Decisions
 
@@ -318,10 +318,103 @@ Run `npm run icons` after adding a name to `WANTED` in `scripts/build-icons.mjs`
 | A sale on screen | The deadline, not the discount | Any store can print a lower number. Both ends of a sale are on a public topic before it matters, so the countdown is checkable. Same argument the split bar makes about money. |
 | Countdown tick rate | Per second under an hour, every 30s above it | A tab left open on a three-day sale would otherwise re-render a quarter of a million times to change nothing. |
 | Reading the clock | `useCountdown` in `lib/countdown.ts`, never `Date.now()` in render | `react-hooks/purity` refuses an impure call during render, correctly: the value would change on any re-render for any reason. |
+| Which explorer a hash opens on | Always the server's URL, never one built here | `lib/hashscan.ts` built HashScan links that cannot resolve an Arc transaction, and nothing on this side could have noticed. Which explorer is correct is a fact about the network the server is pointed at, so the server sends `explorerUrl` / `inferenceUrl` / `identityUrl` / `vaultUrl` and this side only renders them. |
+| Retrying a payment | `PAYMENT_INTENT_EXPIRED` re-prepares, `PAYMENT_PENDING` re-completes the same intent | They are opposites and mixing them up is how a buyer gets charged twice. Expired means nothing was charged. Pending means the money may already be moving, so the only safe move is resubmitting the identical authorization under the identical idempotency key, where the token's own nonce makes a second transfer impossible. A fresh `prepare` is a genuinely new payment. |
+| The Gateway deposit | A real step in the trial's ladder, framed as a meter | A chunk is too small to settle on chain, so chunks spend a Gateway balance rather than the wallet. That balance is **not** the wallet balance, so without this every chunk fails for insufficient funds at any wallet size. It is the one place the Arc port adds a step for a person, so it gets its own rung and its own words rather than being bolted onto funding. |
+| How much to deposit | The trial's `worstCase`, minus what is already in, capped at the wallet | Worst case is the most the trial can ever cost and the server caps it at the game's price, so depositing it means the meter cannot run dry mid-game. Interrupting someone *while playing* is the failure this feature exists to avoid. Capped at the wallet because the funding rung only guarantees one chunk, and asking for more than someone has would strand them on a rung they cannot clear. |
+| Two overloads on `gatePhaseFor` | Checkout passes no deposit and gets a type that cannot be `deposit` | The invariant is real, so the signature states it instead of making the call site assert it. Keeps checkout's own `Phase` union honest. |
 
 ### Log
 
 _Newest first._
+
+#### 2026-10-04 (the Arc port, this side) — Suparno
+
+Pulled all four repos, including the new **`CGS-contracts`**, and worked
+`../CGS-docs/INTEGRATION.md` §19b, Priyanshu's route-by-route audit of what the
+port left broken here. **All six items are done.** None of it is browser-tested:
+every chain write 503s locally until two secrets land, which is the blocker
+above and not code.
+
+**Hedera is gone from the other repo entirely**, so the stale halves of this one
+were not cosmetic. Worst first, which is also the order they were fixed in.
+
+- **`PAYMENT_PENDING` was a silent fake success, and it is the one to remember.**
+  It used to arrive as `202`. That is a 2xx, so `lib/api.ts` saw `response.ok`,
+  returned the `{ error }` envelope *as* the `AccessGrant`, and checkout carried
+  on into the boot sequence with every field `undefined` while the buyer's money
+  may genuinely have been taken. It is a `409` now, so the existing error path
+  catches it. **The retry is the subtle part:** expired and pending are opposites.
+  Expired means nothing was charged, so re-prepare. Pending means the money may
+  already be moving, so re-*complete* the same intent with the same signature,
+  which resubmits one authorization under one idempotency key where the token's
+  nonce makes a second transfer impossible. Calling `prepare` again there is the
+  one way to charge somebody twice, so `settleWithRetry` cannot do it.
+- **Trials could not work at all, and needed a step nobody had designed.** A
+  chunk is too small to settle on chain, so chunks spend a **Circle Gateway**
+  balance, topped up by a one-time on-chain deposit. The balance Gateway checks
+  is not the wallet balance, so before this every chunk failed for insufficient
+  funds at any wallet size. New `deposit` rung on the trial's ladder, after
+  funding rather than before it (depositing moves money *out* of the wallet, so
+  asking first walks someone into a deposit they cannot afford). Two ordinary
+  transactions from the buyer's own wallet, sequential because the deposit pulls
+  USDC through an approval that has to exist first, hence `waitForReceipt`.
+  **Mined is not credited:** Gateway notices a few seconds later, so
+  `waitForDeposit` polls `GET /trial` instead of treating the receipt as the
+  finish line, which would have failed the very first chunk moments after the
+  person watched their deposit succeed.
+- **Deposit size is the trial's worst case, not a flat dollar.** The doc suggests
+  "a few chunks' worth"; worst case is better and costs nothing extra, because
+  the server caps it at the game's own price. It means the meter cannot run dry
+  mid-game, which is the failure worth designing out: it would interrupt someone
+  while they are playing. Capped at the wallet, since the funding rung only
+  guarantees one chunk.
+- **`lib/hashscan.ts` is deleted.** It built HashScan URLs, which cannot resolve
+  an Arc transaction, and nothing here could have noticed. The server now sends a
+  ready-made URL everywhere it returns a hash, because **which explorer is right
+  is a fact about the network the server is pointed at.** Took the three that
+  were being dropped on the floor while I was there: a receipt's settlement and a
+  vault claim are both links now, and `/agent` reads `erc8004AgentId` and
+  `identityUrl` instead of telling every single user "No account on Hedera yet"
+  forever, which it did because it branched on a field that is now always null.
+- **The dead HBAR path is out, and it was further in than it looked.** `/api/me`
+  stopped sending `hbar` and `hederaAccountId`, so an asset toggle, a second set
+  of decimals, `formatAsset`, a destination hint about Hedera account ids and a
+  "no account on Hedera yet" caption on `/money` were all dead or wrong. Deleting
+  the two session fields is what *found* the rest: TypeScript named every caller.
+  On Arc there is no second asset and no account to open, because USDC is the gas
+  token and an address is just an address.
+- **`ApiErrorCode` gained fifteen codes and lost one.** It is
+  `ApiErrorCode | string`, so this is about knowing a code exists rather than
+  about runtime. `PAYMENT_SIGNATURE_INVALID` is gone, nothing referenced it.
+  `payout_held` / `payout_settled` notification copy is **kept deliberately**
+  even though nothing can raise them any more: the database is shared and old
+  rows from the Hedera era are still in it, so deleting the copy would render
+  history as nothing.
+
+**Checked rather than assumed, twice, and both were worth it:**
+
+- **The Gateway ABI.** I needed `deposit(address,uint256)` and would not hardcode
+  a four-byte selector nothing in the file could check. Resolved Circle's
+  `GatewayWallet` from their public `/supported` endpoint, followed the
+  `ERC1967Proxy` to its implementation, and read the real verified ABI off the
+  Arc explorer: `deposit(address,uint256)` confirmed. **viem is a direct
+  dependency now** so `encodeFunctionData` derives the selector from the
+  signature, which is the thing under review.
+- **`arcade-machine` is not in the free Freehand set**, so the deposit panel uses
+  `video-game-controller`. The icon script fails loudly on a missing name, which
+  is how this was cheap to find.
+
+**Worth raising, not fixed:** `GatewayWallet` also exposes
+`depositWithPermit` and `depositWithAuthorization`, either of which would collapse
+this whole rung into one gasless signature. Both need a submitter, so they are the
+server's to drive, not ours. Noted in `../CGS-docs/PROGRESS-LOG.md`.
+
+**Also:** a sale's `hcsStartTxId` is a stale name holding a live Arc hash, so it
+is truncated rather than printed at 66 characters, and deliberately **not**
+linked, because the server sends no explorer URL for a sale the way it does for a
+receipt. Raised rather than worked around. One em dash removed from a `title`
+attribute, which is user-visible copy and our own rule.
 
 #### 2026-09-11 (11 Sep testing round) — Priyanshu
 
