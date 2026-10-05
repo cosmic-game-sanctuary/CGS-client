@@ -27,8 +27,10 @@ import type { Game } from '@/mocks/types'
  * as a spinner. The beats wait on the real payment now, so the shutter cannot
  * come up on a game that hasn't been bought.
  *
- * Real money from here down. The payment is an x402 settlement on Hedera,
- * signed by the buyer's own wallet in this tab. See `api/purchase.ts`.
+ * Real money from here down. The payment is an x402 settlement on Arc, signed
+ * by the buyer's own wallet in this tab, and the buyer pays no network fee:
+ * Circle's facilitator submits the transfer and covers the gas. See
+ * `api/purchase.ts`.
  */
 
 type Phase = 'signin' | 'funding' | 'confirm' | 'paying'

@@ -17,9 +17,16 @@ import { request } from '@/lib/api'
  * - **The handle is not editable here.** It was chosen by whoever did the
  *   inviting and it is already on the published splits, which are immutable. A
  *   field offering to change it would be offering something we cannot do.
- * - **Accepting settles the money in the background.** The response comes back
- *   before the transfers do, and they only go out if this wallet has a Hedera
- *   account. See `getMyEarnings` for what is still held.
+ * - **Accepting links the splits to the new account**, so the response comes
+ *   back before the writes do. There is no held-payout state any more: a share
+ *   accrues in the game's own vault whether or not the invite was accepted, and
+ *   accepting is what lets this person claim it. See `getMyEarnings`.
+ * - **It does not move where a published game pays.** That address is written
+ *   into a deployed vault and cannot be changed by anyone, us included, so
+ *   accepting rewrites the payout address on *draft* games only. Nothing is
+ *   lost: a published share accrues at the address pre-generated for the
+ *   invited email, which is theirs as soon as they sign in with that email. It
+ *   is worth not writing copy here that promises otherwise.
  */
 
 export interface WireInvite {

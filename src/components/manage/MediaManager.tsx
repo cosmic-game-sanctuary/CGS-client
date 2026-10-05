@@ -33,7 +33,7 @@ export function MediaManager({
 
   // Reordering is shown immediately and sent in the background. It used to
   // await the write and then refetch the whole manage view — which re-counts
-  // sales, owners and plays, and asks the Mirror Node — so swapping two
+  // sales, owners and plays, and reads the chain, so swapping two
   // thumbnails took as long as loading the page. Nothing about moving an image
   // needs any of those numbers.
   //

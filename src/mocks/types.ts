@@ -34,7 +34,7 @@ export interface Studio {
   name: string
   /** ENS subname, when claimed. Wins over `name` and `address` in the UI. */
   ens?: string
-  /** Hedera EVM address. Last resort for display — always truncate. */
+  /** A plain EVM address. Last resort for display, and always truncated. */
   address: string
   bio?: string
   memberCount: number

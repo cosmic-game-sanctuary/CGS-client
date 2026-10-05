@@ -63,7 +63,7 @@ export function GameListing() {
   const [loaded, setLoaded] = useState<{
     slug: string
     game: Game | undefined
-    /** Authoritative, from the server's Mirror Node check. */
+    /** Authoritative: the server asks the GameKey contract, not our database. */
     owned: boolean
     wishlisted: boolean
     wishlistCount: number

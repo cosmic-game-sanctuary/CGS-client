@@ -116,8 +116,8 @@ export function getWishlist(signal?: AbortSignal): Promise<WireWishlist> {
  * How many people are waiting for a game, publicly.
  *
  * Every storefront knows this number and none of them publish it. Here the
- * count crosses a milestone and gets written to the public HCS topic, so a
- * visitor can check it on the Mirror Node instead of taking our word for it.
+ * count crosses a milestone and is written to `GameRegistry` as a `Demand`
+ * event, so a visitor can read it off the chain instead of taking our word.
  */
 export interface WireDemand {
   gameId: string

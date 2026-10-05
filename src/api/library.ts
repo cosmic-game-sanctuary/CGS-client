@@ -4,8 +4,8 @@ import type { WireStudioRef } from '@/api/wire'
 /**
  * `GET /api/me/library` — every game this wallet actually holds a key for.
  *
- * Checked live against the Mirror Node rather than a local flag, so it is
- * right even for a key that reached this wallet without passing through the
+ * Checked live against the `GameKey` contract rather than a local flag, so it
+ * is right even for a key that reached this wallet without passing through the
  * store. That is the whole ownership claim being true rather than asserted.
  *
  * Only `removed` games are excluded: a delisted game leaves the catalog but
