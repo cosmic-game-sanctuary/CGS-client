@@ -203,3 +203,95 @@ export function FundingBody({
     </>
   )
 }
+
+/**
+ * Step three, and the trial's alone.
+ *
+ * **The one place this product asks for something extra**, so it is worth being
+ * straight about why rather than dressing it up. Paying by the minute cannot
+ * work a minute at a time: the network fee on a single minute would cost more
+ * than the minute does. So the minutes come out of a balance put aside once, and
+ * each one after that is free to move.
+ *
+ * Framed as the meter it is, not as the two contract calls it happens to be.
+ * Nobody trying a game needs the words "approve" or "allowance", and a buyer who
+ * wanted a crypto app would not be here. What they do need is the two facts that
+ * decide it: how far the money goes, and that it is still theirs.
+ */
+export function DepositBody({
+  amountUsd,
+  alreadyUsd,
+  chunkUsd,
+  chunkMinutes,
+  /** 'approving' and 'depositing' are two transactions, so they are two words. */
+  stage,
+  onDeposit,
+}: {
+  amountUsd: number
+  alreadyUsd: number
+  chunkUsd: number
+  chunkMinutes: number
+  stage: 'idle' | 'approving' | 'depositing' | 'confirming'
+  onDeposit: () => void
+}) {
+  // What the deposit actually buys, in the unit the person cares about. Floored,
+  // because promising 33 minutes and delivering 32 is the wrong way to round.
+  const minutes =
+    chunkUsd > 0 ? Math.floor((amountUsd / chunkUsd) * chunkMinutes) : 0
+  const busy = stage !== 'idle'
+
+  return (
+    <>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-2xl">Set up the meter</h2>
+          <p className="mt-2 font-body text-sm leading-relaxed text-ink-soft">
+            Paying by the minute runs off a balance you set aside once, so no
+            single minute needs its own confirmation. Whatever you don&rsquo;t
+            play stays yours.
+          </p>
+        </div>
+        <Freehand
+          name="video-game-controller"
+          className="h-11 w-11 shrink-0 text-ink"
+        />
+      </div>
+
+      <dl className="mt-5 flex flex-col gap-1.5 rounded-card border-2 border-ink bg-paper-sunk px-4 py-3 font-mono text-[13px]">
+        <div className="flex justify-between">
+          <dt className="text-ink-soft">Setting aside</dt>
+          <dd className="tnum">{formatPrice(amountUsd)}</dd>
+        </div>
+        <div className="flex justify-between">
+          <dt className="text-ink-soft">Covers about</dt>
+          <dd className="tnum">{minutes} minutes</dd>
+        </div>
+        {alreadyUsd > 0 ? (
+          <div className="flex justify-between">
+            <dt className="text-ink-soft">Already in</dt>
+            <dd className="tnum">{formatPrice(alreadyUsd)}</dd>
+          </div>
+        ) : null}
+      </dl>
+
+      <Button
+        variant="go"
+        size="lg"
+        className="mt-4 w-full"
+        disabled={busy}
+        onClick={onDeposit}
+      >
+        {stage === 'approving'
+          ? 'Approving…'
+          : stage === 'depositing'
+            ? 'Setting aside…'
+            : stage === 'confirming'
+              ? 'Almost there…'
+              : `Set aside ${formatPrice(amountUsd)}`}
+      </Button>
+      <p className="mt-3 font-mono text-[11px] text-ink-soft">
+        One time, and it works on every game with a trial.
+      </p>
+    </>
+  )
+}

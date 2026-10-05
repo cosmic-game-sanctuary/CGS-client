@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/Button'
 import { LightsDown } from '@/components/play/LightsDown'
 import {
+  DepositBody,
   FundingBody,
   GateShell,
   SignInBody,
@@ -11,7 +12,14 @@ import { gatePhaseFor } from '@/lib/gate'
 import { cn } from '@/lib/utils'
 import { formatAmount, formatPrice } from '@/lib/format'
 import { buildPathFor, mountBuildFromPath, buyGame } from '@/api/purchase'
-import { buyChunk, getTrial, type WireTrial } from '@/api/trials'
+import {
+  buyChunk,
+  depositAmountFor,
+  depositToGateway,
+  getTrial,
+  waitForDeposit,
+  type WireTrial,
+} from '@/api/trials'
 import { ApiError, errorMessage } from '@/lib/api'
 import { fund, signIn, useSession } from '@/auth/session'
 import { useWalletSigner, type TypedDataRequest } from '@/auth/useWalletSigner'
@@ -75,7 +83,7 @@ export function TrialSession({
   // balance as they play, and a derived gate would slam shut mid-game and take
   // the running build with it.
   const [launched, setLaunched] = useState(
-    () => gatePhaseFor(session, needUnits) === 'ready',
+    () => gatePhaseFor(session, needUnits, trial.gatewayDeposit) === 'ready',
   )
 
   if (!launched) {
@@ -127,10 +135,46 @@ function TrialGate({
   const wallet = useWalletSigner()
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  // The trial prop is a snapshot read before this opened, so the deposit half
+  // of it has to be local: depositing is the one thing on this screen that
+  // changes it, and the phase below has to see that change.
+  const [deposit, setDeposit] = useState(trial.gatewayDeposit)
+  const [depositStage, setDepositStage] = useState<
+    'idle' | 'approving' | 'depositing' | 'confirming'
+  >('idle')
 
-  const phase = gatePhaseFor(session, needUnits)
+  const phase = gatePhaseFor(session, needUnits, deposit)
   const chunkUsd = trial.chunkPriceUsd ?? 0
   const shortfall = Math.max(0, chunkUsd - session.balanceUsd)
+  const depositUnits = depositAmountFor(trial, session.balanceUnits)
+  const depositUsd = Number(depositUnits) / 10 ** trial.assetDecimals
+  // Three rungs only for someone who has never deposited. Read off the live
+  // `deposit`, so it drops to two the moment they have.
+  const rungs = deposit?.needsDeposit ? 3 : 2
+
+  async function handleDeposit() {
+    if (!deposit) return
+    setProblem(null)
+    try {
+      await depositToGateway(deposit, wallet, depositUnits, setDepositStage)
+      // Mined is not the same as credited, so this waits for Gateway itself to
+      // agree before letting anyone through to a chunk.
+      setDepositStage('confirming')
+      const fresh = await waitForDeposit(game.id)
+      if (!fresh?.gatewayDeposit) {
+        setProblem(
+          'That went through, but it has not shown up yet. Give it a few seconds and try again.',
+        )
+        setDepositStage('idle')
+        return
+      }
+      setDeposit(fresh.gatewayDeposit)
+      setDepositStage('idle')
+    } catch (error) {
+      setProblem(errorMessage(error))
+      setDepositStage('idle')
+    }
+  }
 
   async function handleFund(amount: number) {
     setBusy(true)
@@ -156,11 +200,17 @@ function TrialGate({
       <GateShell
         title="this trial"
         step={
+          // Counted against however many rungs this person actually has to
+          // climb, which is not the same for everyone: a buyer who has already
+          // deposited for another game's trial never sees that step at all, and
+          // numbering it anyway would promise a step that never comes.
           phase === 'signin'
-            ? 'Step 1 of 2 · sign in'
+            ? `Step 1 of ${rungs} · sign in`
             : phase === 'funding'
-              ? 'Step 2 of 2 · add funds'
-              : 'Ready when you are'
+              ? `Step 2 of ${rungs} · add funds`
+              : phase === 'deposit'
+                ? `Step ${rungs} of ${rungs} · set up the meter`
+                : 'Ready when you are'
         }
         priceUsd={chunkUsd}
         problem={problem}
@@ -173,6 +223,15 @@ function TrialGate({
               setProblem(null)
               signIn()
             }}
+          />
+        ) : phase === 'deposit' ? (
+          <DepositBody
+            amountUsd={depositUsd}
+            alreadyUsd={deposit?.availableUsd ?? 0}
+            chunkUsd={chunkUsd}
+            chunkMinutes={trial.chunkMinutes}
+            stage={depositStage}
+            onDeposit={() => void handleDeposit()}
           />
         ) : phase === 'funding' ? (
           <FundingBody

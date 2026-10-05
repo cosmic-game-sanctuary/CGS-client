@@ -38,8 +38,14 @@ export interface TypedDataRequest {
 
 export interface TransactionRequest {
   to: string
-  /** Wei, decimal string. On Arc the native token is USDC. */
-  value: string
+  /**
+   * Wei, decimal string. On Arc the native token is USDC. Omitted for a
+   * contract call that moves no value of its own, which is what the two
+   * Gateway deposit steps are.
+   */
+  value?: string
+  /** ABI-encoded calldata. Absent on a plain transfer. */
+  data?: string
   chainId: number
 }
 
@@ -50,6 +56,14 @@ export interface WalletSigner {
   signTypedData: (request: TypedDataRequest) => Promise<string>
   /** Send from the owner's own wallet. Returns the transaction hash. */
   sendTransaction: (request: TransactionRequest) => Promise<string>
+  /**
+   * Block until a sent transaction has been mined, and throw if it reverted.
+   *
+   * Only needed where one write depends on another having landed — the Gateway
+   * deposit is the case, since depositing pulls USDC through an approval that
+   * has to exist first. Nothing else in this app sends two ordered writes.
+   */
+  waitForReceipt: (hash: string) => Promise<void>
 }
 
 export function useWalletSigner(): WalletSigner {
@@ -93,13 +107,20 @@ export function useWalletSigner(): WalletSigner {
       const { wallet: current, provider } = await connected()
       // Hex, because that is what the JSON-RPC method expects — a decimal
       // string is silently misread as something else entirely.
+      //
+      // `value` and `data` are both left off entirely when absent rather than
+      // sent as zero or empty: some providers treat a present-but-empty `data`
+      // as a reason to re-estimate a plain transfer as a contract call.
       return (await provider.request({
         method: 'eth_sendTransaction',
         params: [
           {
             from: current.address,
             to: request.to,
-            value: `0x${BigInt(request.value).toString(16)}`,
+            ...(request.value === undefined
+              ? {}
+              : { value: `0x${BigInt(request.value).toString(16)}` }),
+            ...(request.data === undefined ? {} : { data: request.data }),
           },
         ],
       })) as string
@@ -107,5 +128,38 @@ export function useWalletSigner(): WalletSigner {
     [connected],
   )
 
-  return { ready: wallet !== null, signTypedData, sendTransaction }
+  const waitForReceipt = useCallback(
+    async (hash: string) => {
+      const { provider } = await connected()
+      const deadline = Date.now() + RECEIPT_TIMEOUT_MS
+      while (Date.now() < deadline) {
+        const receipt = (await provider.request({
+          method: 'eth_getTransactionReceipt',
+          params: [hash],
+        })) as { status?: string } | null
+
+        // Null simply means "not mined yet", which is the normal first answer.
+        if (receipt) {
+          // `status` is hex: 0x1 succeeded, 0x0 reverted. A revert has to throw
+          // rather than return, or the next write goes out against a
+          // precondition that was never actually met.
+          if (BigInt(receipt.status ?? '0x0') === 0n) {
+            throw new Error('That transaction was rejected by the network.')
+          }
+          return
+        }
+        await new Promise((resolve) => setTimeout(resolve, RECEIPT_POLL_MS))
+      }
+      throw new Error(
+        'That transaction has not confirmed yet. It may still land, so check your wallet before trying again.',
+      )
+    },
+    [connected],
+  )
+
+  return { ready: wallet !== null, signTypedData, sendTransaction, waitForReceipt }
 }
+
+/** Arc blocks are fast, so this is about a slow link, not a slow chain. */
+const RECEIPT_POLL_MS = 1500
+const RECEIPT_TIMEOUT_MS = 90_000
