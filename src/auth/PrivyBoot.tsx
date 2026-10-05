@@ -30,6 +30,28 @@ import { SessionProvider } from '@/auth/SessionProvider'
  * an embedded wallet on a chain with no RPC fails in ways that are much harder
  * to read than "unsupported chain". If the server is ever pointed at mainnet,
  * `useWalletSigner` refuses the switch loudly rather than sending anywhere.
+ *
+ * **`showWalletUIs: false`, so Privy never puts its own prompt in front of a
+ * payment.** Unset, it inherits the dashboard default, which is to show one —
+ * and since the port to Arc every payment is typed data, which Privy prompts
+ * for where the old raw-hash signature never did. That put a "sign this"
+ * modal over a running game once a minute, for every trial chunk, while the
+ * player was mid-level. A trial that interrupts play to ask permission for
+ * the play is not a trial anyone finishes.
+ *
+ * It is safe to turn off here specifically, and the reasons are worth keeping
+ * together because removing either one makes it unsafe:
+ *
+ * - **Every request is one a person already decided on, on our own screen,
+ *   with the amount in front of them** — Pay, Set aside, Withdraw, Fund. The
+ *   one exception is the trial meter's next chunk, which runs inside a session
+ *   the player started knowingly, against a ceiling stated before the first
+ *   chunk and enforced by the server.
+ * - **Nothing untrusted can reach the wallet.** Uploaded games are the only
+ *   third-party code this app runs, and they run on a separate origin with no
+ *   path to this page's provider (CLAUDE.md §3, "Why the second origin").
+ *   If builds ever ran on this origin, this flag would let any of them sign
+ *   for the player silently, and it would have to go back on.
  */
 const APP_ID = import.meta.env.VITE_PRIVY_APP_ID
 
@@ -45,6 +67,7 @@ export function PrivyBoot({ children }: { children: ReactNode }) {
         supportedChains: [arcTestnet],
         embeddedWallets: {
           ethereum: { createOnLogin: 'users-without-wallets' },
+          showWalletUIs: false,
         },
         appearance: {
           theme: 'light',
