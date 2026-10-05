@@ -280,10 +280,29 @@ function Running({
             <p className="mt-1 font-mono tnum text-[clamp(28px,4vw,40px)] leading-none font-bold text-green">
               {formatAmount(agent.balanceUsd)}
             </p>
+            {/*
+              An agent registers on ERC-8004 when it is first funded, so an
+              unregistered one is simply an agent nobody has put money in yet.
+              The link is the server's, not ours: which explorer is right is a
+              fact about the chain it is pointed at.
+            */}
             <p className="mt-2 font-mono text-[11px] leading-relaxed text-ink-soft">
-              {agent.agentAccountId
-                ? `Account ${agent.agentAccountId}`
-                : 'No account on Hedera yet. The first money in makes one.'}
+              {agent.erc8004AgentId ? (
+                agent.identityUrl ? (
+                  <a
+                    className="underline decoration-dotted hover:text-ink"
+                    href={agent.identityUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Registered as agent #{agent.erc8004AgentId}
+                  </a>
+                ) : (
+                  `Registered as agent #${agent.erc8004AgentId}`
+                )
+              ) : (
+                'Not registered yet. The first money in registers it.'
+              )}
             </p>
             <p className="mt-1 font-mono text-[11px] text-ink-soft">
               {STATUS[agent.status]}

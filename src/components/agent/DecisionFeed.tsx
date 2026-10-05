@@ -6,7 +6,6 @@ import { respondToDecision, type WireDecision } from '@/api/agent'
 import { ApiError, errorMessage } from '@/lib/api'
 import { formatAmount, timeAgo } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { hashscanTx } from '@/lib/hashscan'
 
 /**
  * What the agent did, and what it was thinking.
@@ -265,11 +264,11 @@ function DecisionRow({
         <p className="mt-2.5 font-mono text-[10px] text-ink-faint">
           Thinking cost {formatAmount(decision.inferenceCostUnits / 10 ** 6)},
           paid over x402 like everything else.
-          {decision.inferenceTxId ? (
+          {decision.inferenceUrl ? (
             <>
               {' '}
               <a
-                href={hashscanTx(decision.inferenceTxId)}
+                href={decision.inferenceUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="text-ink underline"

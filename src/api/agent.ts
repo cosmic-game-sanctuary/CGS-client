@@ -40,9 +40,21 @@ export interface WireAgent {
   expiresAt: string | null
   /** Where to send money. An ordinary address, funded by an ordinary transfer. */
   fundAddress: string
-  /** Null until the first transfer brings the account into existence. */
+  /**
+   * The agent's identity, registered on ERC-8004 when it is first funded. Null
+   * before that, which is a real state and reads as "not registered yet" rather
+   * than as something being wrong.
+   */
+  erc8004AgentId: string | null
+  /** Where to see that registration. Server-built, because it knows the chain. */
+  identityUrl: string | null
+  /**
+   * @deprecated Always null on Arc. Both survive only so a client written
+   * against the Hedera shape keeps parsing. Read `erc8004AgentId`.
+   */
   agentAccountId: string | null
   hcs14Aid: string | null
+
   ensLabel: string | null
   ensName: string | null
   ensTxHash: string | null
@@ -122,13 +134,19 @@ export interface WireDecision {
   reasoning: string | null
   inferenceCostUnits: number | null
   /**
-   * The Hedera transaction that paid for that inference.
+   * The transaction that paid for that inference.
    *
    * The point of showing it is that "the agent pays for its own reasoning" is
    * a claim until someone can open the transfer on a public explorer. Null
    * wherever `inferenceCostUnits` is, and on rows written before this existed.
    */
   inferenceTxId: string | null
+  /**
+   * Where to open that payment. Server-built: which explorer resolves a
+   * transaction is a fact about the chain the server is pointed at, and it is
+   * the only side that knows. Null wherever `inferenceTxId` is.
+   */
+  inferenceUrl: string | null
   /** When a hold or a question stops waiting. Null on a settled row. */
   decideBy: string | null
   /** Null while a `held` or `asked` row is still live. */
