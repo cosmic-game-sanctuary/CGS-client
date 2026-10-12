@@ -219,7 +219,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 1. ~~**W12 sales.**~~ **Done, tested 2026-09-08.** See the log entry below. **One gap, and it is the server's:** `promotion` is on the game detail route only, so a catalog card shows the discounted price (which is the game's real price while a sale runs) but cannot say it is discounted.
 2. ~~**W13 paid trials.**~~ **Done, tested 2026-09-08.** Two server changes were needed and are on `frontend-integration` in CGS-server. See the log entry below.
 3. ~~**W9 the agent, rebuilt as 1:N.**~~ **The headline case works.** Creating, funding, setting a want, the deferral and the contested round are all verified: two games on sale at once against a budget for one, and it waited, then chose. The decision rule was rewritten on 9 Sep after the first version turned out to make that round unreachable. **Still unrun: the second wire, the plain price cut, ask-first and the wind-down.** See both log entries below. Testing needs `GROQ_API_KEY` and the default hour in `AGENT_PURCHASE_BUFFER_MS`, where a 70-minute sale decides in 10.
-4. **The Arc port, on this side.** Trial, deposit and purchase are browser-tested (5 Oct). **Still to click through:** publishing a real build with the new progress panel, a withdrawal and agent funding (both go through the wallet-chain fix and have never sent on Arc from a browser), opening a trial signed out (the path that used to skip the deposit), the silent trial meter, and the set-aside line on `/money`. Not forceable: `PAYMENT_PENDING` only fires when Circle is slow.
+4. **The Arc port, on this side.** Trial, deposit and purchase are browser-tested (5 Oct). **Still to click through:** publishing a real build with the new progress panel, a withdrawal and agent funding (both go through the wallet-chain fix and have never sent on Arc from a browser), opening a trial signed out (the path that used to skip the deposit), the silent trial meter, the set-aside line on `/money`, and **taking it back out** (12 Oct, proven on chain up to Privy). Not forceable: `PAYMENT_PENDING` only fires when Circle is slow.
 5. Then likes and comments, which have API modules and no UI, then Impeccable per screen and swipe discovery if there is time.
 
 **Untested:** cloud saves (no build we have writes to storage) and the failed-payout path (nothing has failed yet).
@@ -329,11 +329,40 @@ _Cleared 2026-10-05: `ARC_OPERATOR_KEY` and `CIRCLE_API_KEY` are both in `.env`.
 | Numbering the money ladder | Named rungs, no "Step N of M" | Whether someone needs funds or a deposit is only learned after sign-in, so any count is a guess. It said "Step 3 of 3" to people who never saw 1 or 2, in checkout too. |
 | Gas on a deposit | $0.01 held back, and asked for at the funding rung | USDC is the gas token, so depositing the whole balance leaves nothing for the deposit's own second transaction. Measured: 0.0036 for both. |
 | Where a trial's leftover deposit shows | A second line in the wallet card on `/money`, only when non-zero | It is the buyer's money and was in none of the figures. Not a third card: the top pair is deliberate and the line would read $0.00 for nearly everyone. Read from its own route, `GET /api/me/gateway`, because it costs a call to Circle and `/api/me` runs on every page. |
+| Taking a trial deposit back | On `/money`, inside the set-aside line, all-or-nothing | Nobody wants a precise amount of trial dust back, so one button. It offers what can come out (`withdrawableUnits`, the balance less Circle's fee ceiling), never the balance, which Circle refuses every time. The final mint is the wallet's own transaction, so a failure there keeps the transaction and offers to finish rather than forgetting it. |
+| Showing sub-cent amounts | Not at all | They round to a figure that is not true, and that much can neither come out nor buy a minute of play. A full withdrawal leaves exactly that behind. |
 | Uploading a build | `XMLHttpRequest` with a stall timer, then a long wait for the server | `fetch` cannot report upload progress, and a flat ceiling cannot tell a slow uplink from a dead one. The old 90s cap was shorter than the server's own unpacking and pinning alone, which measured 93s and 305s for the same build. |
 
 ### Log
 
 _Newest first._
+
+#### 2026-10-12 (taking a trial deposit back) — Suparno
+
+Priyanshu built Gateway withdraw on the server (`b174303`); the client half is
+"Take $0.23 back" on `/money`, inside the set-aside line. **Before building on
+it I ran the only amount the screen offers, "everything", through the real
+routes, and it could not have worked.** Both fixes are in CGS-server and
+written up in `../CGS-docs/PROGRESS-LOG.md`:
+
+- **Circle refused "everything" every time**, because its fee comes out on
+  top of the amount: `"available 0.050000, required 0.0535"`. His check only
+  ever withdraws half, so the default path never ran. It now means the
+  balance less the fee *ceiling*, which can never be refused for fees.
+- **The prepare route 500'd on every call.** `res.json` throws on a bigint and
+  the burn intent carries three. His check calls the service, never HTTP.
+
+Then the whole flow over a real JSON round trip on Arc: serialises, a
+signature over the parsed strings recovers against the bigint original, the
+mint lands, the wallet gets the amount less 0.0034 of gas.
+
+**The design point worth remembering:** the last step is the wallet's own
+transaction, and once Circle has released the money that transaction exists
+only in `SetAside`. So it is guarded *before* signing (the wallet must hold
+the mint's gas), and a failure after release throws `MintNotSent`, which
+carries the transaction for a "Finish sending" retry. The attestation never
+expires and anyone may submit it, so the server could do this step instead,
+paying the gas as it does for a claim. Raised with Priyanshu; not blocking.
 
 #### 2026-10-05 (the first browser pass on Arc) — Suparno
 
