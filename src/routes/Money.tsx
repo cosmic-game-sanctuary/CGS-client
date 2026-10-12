@@ -11,6 +11,7 @@ import { SiteFooter } from '@/components/SiteFooter'
 import { SiteHeader } from '@/components/SiteHeader'
 import { Button, ButtonLink } from '@/components/ui/Button'
 import { WithdrawPanel } from '@/components/money/WithdrawPanel'
+import { SetAside } from '@/components/money/SetAside'
 import {
   claimEarnings,
   getMyEarnings,
@@ -20,7 +21,7 @@ import {
 import { getSetAside } from '@/api/trials'
 import { errorMessage } from '@/lib/api'
 import { formatAmount } from '@/lib/format'
-import { signIn, useSession } from '@/auth/session'
+import { refreshSession, signIn, useSession } from '@/auth/session'
 
 /**
  * What you made, and the way out.
@@ -80,14 +81,19 @@ export function Money() {
   // tagged with the user like everything else here.
   const [setAside, setSetAside] = useState<{
     userId: string
-    units: number
+    available: number
+    withdrawable: number
   } | null>(null)
   useEffect(() => {
     if (!userId) return
     const controller = new AbortController()
     getSetAside(controller.signal)
       .then((read) =>
-        setSetAside({ userId, units: Number(read.availableUnits) }),
+        setSetAside({
+          userId,
+          available: Number(read.availableUnits),
+          withdrawable: Number(read.withdrawableUnits),
+        }),
       )
       .catch(() => {
         // "Circle could not be asked" is not "there is nothing there". Showing
@@ -97,7 +103,13 @@ export function Money() {
     // A deposit moves money out of the wallet, so the wallet balance changing
     // is the cheapest sign this is stale too.
   }, [userId, session.balanceUnits, refresh])
-  const asideUnits = setAside?.userId === userId ? setAside.units : 0
+  const aside = setAside?.userId === userId ? setAside : null
+  // Taking a set-aside balance back moves money into the wallet, so both
+  // figures on this page are stale at once.
+  const afterWithdraw = useCallback(() => {
+    refreshSession()
+    reload()
+  }, [reload])
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -161,15 +173,14 @@ export function Money() {
                 note="what you can spend or take out now"
                 tone="wallet"
                 aside={
-                  asideUnits > 0 ? (
-                    <>
-                      Plus{' '}
-                      <b className="tnum text-ink">
-                        {formatAmount(asideUnits / 10 ** session.assetDecimals)}
-                      </b>{' '}
-                      set aside for trials. Your next one uses it first, on
-                      any game.
-                    </>
+                  aside ? (
+                    <SetAside
+                      availableUnits={aside.available}
+                      withdrawableUnits={aside.withdrawable}
+                      walletUnits={session.balanceUnits}
+                      decimals={session.assetDecimals}
+                      onChanged={afterWithdraw}
+                    />
                   ) : null
                 }
               />
@@ -428,7 +439,7 @@ function Headline({
   value: string | null
   note: string
   tone?: 'wallet'
-  /** A second line under the note, for money that belongs beside this figure. */
+  /** Under the note, for money that belongs beside this figure. Draws its own divider. */
   aside?: ReactNode
 }) {
   return (
@@ -450,11 +461,10 @@ function Headline({
         </p>
       )}
       <p className="mt-2 font-mono text-[11px] text-ink-soft">{note}</p>
-      {aside ? (
-        <p className="mt-1.5 border-t-2 border-dashed border-ink-faint pt-1.5 font-mono text-[11px] leading-relaxed text-ink-soft">
-          {aside}
-        </p>
-      ) : null}
+      {/* Unwrapped: whatever goes here draws its own divider, so that a
+          component with nothing to say can render nothing and leave no
+          dashed rule behind it. */}
+      {aside}
     </div>
   )
 }

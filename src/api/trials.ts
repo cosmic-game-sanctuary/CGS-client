@@ -95,6 +95,14 @@ export interface WireSetAside {
   /** A string: an integer amount, not ours to round. */
   availableUnits: string
   availableUsd: number
+  /**
+   * What can actually come back out, which is **less** than what is there.
+   * Circle takes its fee on top of a withdrawal, from the same balance, so the
+   * whole of it can never come out. The server works this out so this side
+   * never carries a copy of Circle's fee that could fall out of date.
+   */
+  withdrawableUnits: string
+  withdrawableUsd: number
   asset: string
   assetDecimals: number
 }
@@ -109,6 +117,113 @@ export interface WireSetAside {
  */
 export function getSetAside(signal?: AbortSignal): Promise<WireSetAside> {
   return request<WireSetAside>('/api/me/gateway', { signal })
+}
+
+/**
+ * Taking an unused trial deposit back out of Gateway, into the wallet.
+ *
+ * Three steps, and the last one is ours rather than the server's:
+ *
+ * 1. `prepare` builds a Circle **burn intent** for everything that can come
+ *    out. Sent whole, signed whole: its domain has no chain id in it, unlike
+ *    every other thing this app signs, so it must not be rebuilt here to look
+ *    like one.
+ * 2. `complete` hands the signature to Circle, which releases the money and
+ *    returns an attestation as a ready-made `mintTransaction`.
+ * 3. **The wallet sends that transaction itself**, paying its own gas (about a
+ *    third of a cent), and the money lands when it confirms. There is no
+ *    fourth call: the mint *is* the withdrawal.
+ *
+ * The step that can strand money is the third. Circle has already released it
+ * by then, and the attestation never expires and anyone may submit it, so
+ * nothing is lost, but if this page lets go of it nothing will ever send it
+ * either. So a failure there throws `MintNotSent`, which carries the
+ * transaction for a retry, instead of a plain error the screen would show and
+ * forget.
+ */
+export type GatewayWithdrawStage = 'signing' | 'releasing' | 'sending'
+
+interface PreparedGatewayWithdraw {
+  withdrawId: string
+  typedData: TypedDataRequest
+  amountUnits: string
+  amountUsd: number
+  expiresAt: string
+}
+
+interface CompletedGatewayWithdraw {
+  amountUnits: string
+  amountUsd: number
+  mintTransaction: { to: string; data: string; chainId: number }
+}
+
+/** Circle released the money; sending it to the wallet did not finish. */
+export class MintNotSent extends Error {
+  readonly mint: TransactionRequest
+  readonly amountUnits: string
+
+  constructor(mint: TransactionRequest, amountUnits: string, cause: unknown) {
+    super(cause instanceof Error ? cause.message : 'The last step did not finish.')
+    this.name = 'MintNotSent'
+    this.mint = mint
+    this.amountUnits = amountUnits
+  }
+}
+
+export async function withdrawFromGateway(
+  wallet: {
+    signTypedData: (request: TypedDataRequest) => Promise<string>
+    sendTransaction: (request: TransactionRequest) => Promise<string>
+    waitForReceipt: (hash: string) => Promise<void>
+  },
+  onStage?: (stage: GatewayWithdrawStage) => void,
+): Promise<{ amountUnits: string }> {
+  onStage?.('signing')
+  // No `amountUnits`: the server sends everything that can come out, which is
+  // the only amount this screen offers.
+  const prepared = await request<PreparedGatewayWithdraw>(
+    '/api/me/gateway/withdraw/prepare',
+    { method: 'POST', body: {} },
+  )
+  const signature = await wallet.signTypedData(prepared.typedData)
+
+  onStage?.('releasing')
+  const completed = await request<CompletedGatewayWithdraw>(
+    '/api/me/gateway/withdraw/complete',
+    { method: 'POST', body: { withdrawId: prepared.withdrawId, signature } },
+  )
+
+  await sendMint(
+    { ...completed.mintTransaction },
+    completed.amountUnits,
+    wallet,
+    onStage,
+  )
+  return { amountUnits: completed.amountUnits }
+}
+
+/**
+ * The third step on its own, so a `MintNotSent` can be retried without going
+ * back through Circle. Sending a mint twice is harmless: the second one
+ * reverts because the attestation is spent, costing a third of a cent of gas
+ * and no money.
+ */
+export async function sendMint(
+  mint: TransactionRequest,
+  amountUnits: string,
+  wallet: {
+    sendTransaction: (request: TransactionRequest) => Promise<string>
+    waitForReceipt: (hash: string) => Promise<void>
+  },
+  onStage?: (stage: GatewayWithdrawStage) => void,
+): Promise<void> {
+  onStage?.('sending')
+  try {
+    const hash = await wallet.sendTransaction(mint)
+    await wallet.waitForReceipt(hash)
+  } catch (error) {
+    throw new MintNotSent(mint, amountUnits, error)
+  }
 }
 
 /** Public. The config is anyone's to read; the numbers about you are not. */
