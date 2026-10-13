@@ -122,19 +122,21 @@ export function getSetAside(signal?: AbortSignal): Promise<WireSetAside> {
 /**
  * Taking an unused trial deposit back out of Gateway, into the wallet.
  *
- * Three steps, and the last one is ours rather than the server's:
+ * Two calls, and the server sends the last transaction:
  *
  * 1. `prepare` builds a Circle **burn intent** for everything that can come
  *    out. Sent whole, signed whole: its domain has no chain id in it, unlike
  *    every other thing this app signs, so it must not be rebuilt here to look
  *    like one.
- * 2. `complete` hands the signature to Circle, which releases the money and
- *    returns an attestation as a ready-made `mintTransaction`.
- * 3. **The wallet sends that transaction itself**, paying its own gas (about a
- *    third of a cent), and the money lands when it confirms. There is no
- *    fourth call: the mint *is* the withdrawal.
+ * 2. `complete` hands the signature to Circle, which releases the money, and
+ *    then redeems the attestation itself, paying the gas (`mintTxHash`). The
+ *    money is in the wallet when it returns, and an empty wallet can do this.
  *
- * The step that can strand money is the third. Circle has already released it
+ * **Fallback.** If the server's redeem fails, `mintTxHash` is null and
+ * `mintTransaction` must be sent from here, paying the wallet's own gas
+ * (about a third of a cent).
+ *
+ * The step that can strand money is that fallback send. Circle has already released it
  * by then, and the attestation never expires and anyone may submit it, so
  * nothing is lost, but if this page lets go of it nothing will ever send it
  * either. So a failure there throws `MintNotSent`, which carries the
@@ -154,6 +156,14 @@ interface PreparedGatewayWithdraw {
 interface CompletedGatewayWithdraw {
   amountUnits: string
   amountUsd: number
+  /**
+   * Set when the server redeemed the attestation itself, paying the gas: the
+   * money is already in the wallet and there is nothing left to send. Null is
+   * the fallback (the server's attempt failed), and `mintTransaction` must then
+   * be sent from here.
+   */
+  mintTxHash: string | null
+  explorerUrl: string | null
   mintTransaction: { to: string; data: string; chainId: number }
 }
 
@@ -192,6 +202,11 @@ export async function withdrawFromGateway(
     '/api/me/gateway/withdraw/complete',
     { method: 'POST', body: { withdrawId: prepared.withdrawId, signature } },
   )
+
+  // The server normally redeems it, so there is no third step and a wallet
+  // with no gas can withdraw. Only if its attempt failed does this fall back
+  // to sending the mint from here.
+  if (completed.mintTxHash) return { amountUnits: completed.amountUnits }
 
   await sendMint(
     { ...completed.mintTransaction },

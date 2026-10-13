@@ -59,9 +59,9 @@ export function SetAside({
   // We show money to the cent. Less than one rounds to a figure that is not
   // true, and dust that small can neither come out nor buy a minute of play.
   const cent = 10 ** (decimals - 2)
-  // The mint is the wallet's own transaction, so it needs gas from the wallet.
-  // Checked before anything is signed: after Circle has released the money is
-  // the worst possible moment to discover the wallet cannot collect it.
+  // Only the rare fallback needs the wallet's own gas: the server normally
+  // sends the mint itself, so taking money back works from an empty wallet.
+  // "Finish sending" is that fallback and keeps the guard.
   const canPayGas = walletUnits >= GAS_RESERVE_UNITS
   const busy = stage !== null
 
@@ -131,7 +131,7 @@ export function SetAside({
             <Button
               variant="neutral"
               size="sm"
-              disabled={busy || !canPayGas}
+              disabled={busy}
               onClick={() => void takeBack()}
             >
               {busy
@@ -139,7 +139,7 @@ export function SetAside({
                 : `Take ${formatAmount(toUsd(withdrawableUnits))} back`}
             </Button>
           </Action>
-          <Hint>{canPayGas ? 'A fee of under a cent comes out of it.' : NEEDS_GAS}</Hint>
+          <Hint>A fee of under a cent comes out of it.</Hint>
         </>
       ) : null}
       {problem ? (
