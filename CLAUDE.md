@@ -132,7 +132,7 @@ Price triggers are set **on the game listing**, under the buy box, not on a page
 | Styling | **Tailwind v4** — tokens via `@theme` in `src/styles/tokens.css` ([DESIGN.md §12](DESIGN.md)) |
 | Components | shadcn/ui via [neobrutalism.dev](https://www.neobrutalism.dev) as a starting skeleton, **tokens overwritten with ours immediately** |
 | Icons | `@iconify-json/streamline-freehand` (CC BY 4.0) for character, `lucide-react` (MIT) for chrome |
-| Auth / wallets | `@privy-io/react-auth`, email login, embedded wallets pinned to Arc testnet with Privy's own prompts off (`auth/PrivyBoot.tsx`) |
+| Auth / wallets | `@privy-io/react-auth`, email login, embedded wallets pinned to the one Arc network `VITE_ARC_NETWORK` names (testnet unless set; `lib/network.ts`) with Privy's own prompts off (`auth/PrivyBoot.tsx`) |
 | Routing / data | not chosen yet — decide when the second screen lands, not before |
 
 ### tsconfig gotchas (already set, will bite generated code)
@@ -197,7 +197,7 @@ Backend stack, for context when generating client types: Node + TypeScript, Expr
 > **The database is shared and a migration is a deploy.** Both sides point at one Neon database, so branching code does not branch the schema. Stage 18 dropped `wishlist_agents.target_game_id`, which broke the *other* checkout with no code change on that side. If the server throws `column … does not exist`, pull before debugging.
 **Deps installed:** React 19, Vite 8, Tailwind v4, react-router-dom, lucide-react, clsx + tailwind-merge, fflate, `@privy-io/react-auth`, **viem** (direct as of 4 Oct, for the two Gateway deposit calls; it was already in the tree as Privy's own dependency and dedupes to one copy), `@iconify-json/streamline-freehand` (dev)
 **Screens built:** catalog (`/`), listing (`/game/:slug`), manage (`/game/:slug/manage`), checkout overlay, player (`/play/:slug`), publish (`/publish`), studio (`/studio/:id` and `/studio/new`), library (`/library`), money (`/money`), profile (`/u/:handle`), invite (`/invite/:id`), 404
-**Deployed:** no. Needs `VITE_PREVIEW_ORIGIN` (§3).
+**Deployed:** no. Needs `VITE_PREVIEW_ORIGIN` (§3), and `VITE_ARC_NETWORK=mainnet` for a mainnet build, matching the server's `ARC_NETWORK`.
 
 **Working end to end, against the real backend:**
 - **Try before you buy:** a paid trial runs the real build by the minute, the next chunk is bought while the current one still runs, and every cent comes off the price when you buy from inside the session.
@@ -253,7 +253,7 @@ src/routes/               Catalog, GameListing, ManageGame, Player, Publish,
                           InviteAccept, NotFound
 ```
 
-Integration seams are marked `TODO(integration)` — grep for it. The only live one is Privy's own funding UI, which replaces the dev faucet before any deploy. **The rest are stale**, left in `src/mocks/` and the publish flow by code that was integrated around them; `src/mocks/notifications.ts` is dead and imported by nothing.
+Integration seams are marked `TODO(integration)` — grep for it. The only live one is a card purchase on mainnet, on `fund()` in `auth/session.ts`; until it exists, mainnet's "Add funds" is the wallet address. **The rest are stale**, left in `src/mocks/` and the publish flow by code that was integrated around them; `src/mocks/notifications.ts` is dead and imported by nothing.
 
 ### Running a real game build in the page
 
@@ -331,11 +331,42 @@ _Cleared 2026-10-05: `ARC_OPERATOR_KEY` and `CIRCLE_API_KEY` are both in `.env`.
 | Where a trial's leftover deposit shows | A second line in the wallet card on `/money`, only when non-zero | It is the buyer's money and was in none of the figures. Not a third card: the top pair is deliberate and the line would read $0.00 for nearly everyone. Read from its own route, `GET /api/me/gateway`, because it costs a call to Circle and `/api/me` runs on every page. |
 | Taking a trial deposit back | On `/money`, inside the set-aside line, all-or-nothing | Nobody wants a precise amount of trial dust back, so one button. It offers what can come out (`withdrawableUnits`, the balance less Circle's fee ceiling), never the balance, which Circle refuses every time. The final mint is the wallet's own transaction, so a failure there keeps the transaction and offers to finish rather than forgetting it. |
 | Showing sub-cent amounts | Not at all | They round to a figure that is not true, and that much can neither come out nor buy a minute of play. A full withdrawal leaves exactly that behind. |
+| Which Arc a build talks to | `VITE_ARC_NETWORK`, one chain in Privy's `supportedChains`, never both | It has to agree with the server's `ARC_NETWORK`, and a wallet allowed onto both would sit on whichever it last used. A transaction built for the other chain is refused in `useWalletSigner` before anything is sent. An unrecognised value is a setup screen, not a silent testnet, because a typo in a mainnet deploy would otherwise look like it worked. |
+| Funding on mainnet | The wallet address, in full, with the balance polled until the rung moves on | There is no faucet on mainnet, and no card route yet: MoonPay delivers USDC on Arc, but Privy's `useFundWallet` (checked up to `js-sdk-core` 0.78.3) maps Arc to nothing and falls back to **Ethereum mainnet** with a console warning, so wiring it would sell people USDC on the wrong chain. The step used to promise "card or bank, handled by our payments partner" above a button that could only reach the testnet faucet. |
 | Uploading a build | `XMLHttpRequest` with a stall timer, then a long wait for the server | `fetch` cannot report upload progress, and a flat ceiling cannot tell a slow uplink from a dead one. The old 90s cap was shorter than the server's own unpacking and pinning alone, which measured 93s and 305s for the same build. |
 
 ### Log
 
 _Newest first._
+
+#### 2026-10-14 (ready for a mainnet build) — Suparno
+
+Asked what mainnet needs, checked it against mainnet itself rather than the
+docs, and fixed the three things that would have broken. Arc mainnet is live
+(chain `5042`); USDC, Multicall3 and both Circle Gateway contracts are at the
+addresses the server already uses.
+
+- **The client was testnet-only by construction.** My own fix of 5 Oct pinned
+  Privy to `arcTestnet`. Now `VITE_ARC_NETWORK` picks the chain
+  (`lib/network.ts`), and mainnet gets a real definition, since viem's `arc`
+  ships with an empty RPC list. A mainnet build was checked to carry the
+  mainnet RPC and to compile the faucet out entirely.
+- **"Add funds" could not work on mainnet, and the copy under it was false.**
+  The only button reached the dev faucet. On mainnet the step is now the wallet
+  address, in full, with a copy button, and it moves on by itself when the
+  money lands. Testnet keeps the faucet and shows the address under it, and a
+  faucet that is switched off says so in words (the mapping moved into
+  `fund()`, so the menu and both ladders say the same thing).
+  `DepositAddress` came out of `ProfileMenu` to serve both.
+- **Agents could not have registered on mainnet.** Server side: the ERC-8004
+  registry default was the testnet address, commented as the same on both
+  networks. It is not: each network has its own, and neither has code on the
+  other. Both run the identical implementation, so only the address changed.
+  Written up in `../CGS-docs/PROGRESS-LOG.md`.
+
+**Not clicked through on mainnet.** Nothing here spends mainnet money until the
+contracts are deployed there, which is Priyanshu's half. Testnet behaviour is
+unchanged apart from the address now showing on the funding step.
 
 #### 2026-10-12 (taking a trial deposit back) — Suparno
 
