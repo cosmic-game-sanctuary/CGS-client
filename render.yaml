@@ -28,6 +28,8 @@ services:
       - { key: VITE_API_URL, sync: false }
       - { key: VITE_PRIVY_APP_ID, sync: false }
       - { key: VITE_PREVIEW_ORIGIN, sync: false }
+      # testnet or mainnet; must match ARC_NETWORK on the API. Unset is testnet.
+      - { key: VITE_ARC_NETWORK, sync: false }
     routes:
       # react-router owns the paths. Anything that is a real file (assets,
       # preview-host.html, preview-sw.js) is served before this applies.

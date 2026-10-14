@@ -1,7 +1,7 @@
 import { PrivyProvider } from '@privy-io/react-auth'
 import type { ReactNode } from 'react'
-import { arcTestnet } from 'viem/chains'
 import { SessionProvider } from '@/auth/SessionProvider'
+import { ARC_CHAIN, ARC_NETWORK_INVALID } from '@/lib/network'
 
 /**
  * Privy, configured.
@@ -26,10 +26,10 @@ import { SessionProvider } from '@/auth/SessionProvider'
  * RPC and only failed because the wallet held no mainnet ETH. Withdrawals and
  * agent funding share the same path and would have done the same.
  *
- * Testnet only, deliberately. viem's `arc` mainnet definition ships no RPC, and
- * an embedded wallet on a chain with no RPC fails in ways that are much harder
- * to read than "unsupported chain". If the server is ever pointed at mainnet,
- * `useWalletSigner` refuses the switch loudly rather than sending anywhere.
+ * One chain, never both: `VITE_ARC_NETWORK` picks it (`lib/network.ts`), and
+ * it has to match the server's `ARC_NETWORK`. Offering both would let a wallet
+ * sit on whichever it last used, which is the chain-1 bug again with a more
+ * plausible wrong answer. A mismatch is refused before anything is sent.
  *
  * **`showWalletUIs: false`, so Privy never puts its own prompt in front of a
  * payment.** Unset, it inherits the dashboard default, which is to show one —
@@ -57,14 +57,17 @@ const APP_ID = import.meta.env.VITE_PRIVY_APP_ID
 
 export function PrivyBoot({ children }: { children: ReactNode }) {
   if (!APP_ID) return <MissingAppId />
+  if (ARC_NETWORK_INVALID !== null) {
+    return <BadNetwork value={ARC_NETWORK_INVALID} />
+  }
 
   return (
     <PrivyProvider
       appId={APP_ID}
       config={{
         loginMethods: ['email'],
-        defaultChain: arcTestnet,
-        supportedChains: [arcTestnet],
+        defaultChain: ARC_CHAIN,
+        supportedChains: [ARC_CHAIN],
         embeddedWallets: {
           ethereum: { createOnLogin: 'users-without-wallets' },
           showWalletUIs: false,
@@ -102,6 +105,23 @@ VITE_PRIVY_APP_ID=your-app-id`}
       </pre>
       <p className="font-mono text-[11px] text-ink-soft">
         Restart the dev server after adding it. Vite only reads env at startup.
+      </p>
+    </div>
+  )
+}
+
+/** Same idea as `MissingAppId`: a typo in a deploy, said plainly. */
+function BadNetwork({ value }: { value: string }) {
+  return (
+    <div className="mx-auto flex min-h-screen max-w-140 flex-col justify-center gap-4 px-6">
+      <h1 className="text-3xl">VITE_ARC_NETWORK is not a network.</h1>
+      <p className="font-body leading-relaxed text-ink-soft">
+        It is set to <code>{value}</code>. Use <code>testnet</code> or{' '}
+        <code>mainnet</code>, the same value as <code>ARC_NETWORK</code> on the
+        server, or leave it unset for testnet.
+      </p>
+      <p className="font-mono text-[11px] text-ink-soft">
+        Rebuild after changing it. Vite reads env at build time.
       </p>
     </div>
   )

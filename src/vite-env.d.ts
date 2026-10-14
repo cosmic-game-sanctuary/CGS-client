@@ -7,6 +7,13 @@ interface ImportMetaEnv {
    * `src/lib/previewHost.ts`; in dev this is derived and needs no value.
    */
   readonly VITE_PREVIEW_ORIGIN?: string
+  /**
+   * `testnet` (the default) or `mainnet`. Must match the server's
+   * `ARC_NETWORK`. See `src/lib/network.ts`.
+   */
+  readonly VITE_ARC_NETWORK?: string
+  /** Replaces the public Arc RPC for the wallet. Ships in the bundle. */
+  readonly VITE_ARC_RPC_URL?: string
 }
 
 interface ImportMeta {

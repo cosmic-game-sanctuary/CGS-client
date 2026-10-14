@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import { getEmbeddedConnectedWallet, useWallets } from '@privy-io/react-auth'
+import { ARC_CHAIN, ARC_NETWORK_NAME } from '@/lib/network'
 
 /**
  * Signing and sending with the wallet Privy made for you.
@@ -116,8 +117,15 @@ export function useWalletSigner(): WalletSigner {
       // case; this fixes the rest, because the chain id comes from the server
       // and only the server knows which network it is pointed at.
       //
-      // Privy throws for a chain outside `supportedChains`, which is the
-      // behaviour wanted: refusing loudly beats sending to the wrong network.
+      // Privy would throw for a chain outside `supportedChains` anyway, but
+      // with a message about chains that nobody here could act on. This only
+      // happens when the site and the server were deployed for different
+      // networks, so it says that, before anything is sent.
+      if (request.chainId !== ARC_CHAIN.id) {
+        throw new Error(
+          `This site is set up for ${ARC_NETWORK_NAME}, but the server asked for a different network. Nothing was sent.`,
+        )
+      }
       if (current.chainId !== `eip155:${request.chainId}`) {
         await current.switchChain(request.chainId)
       }
