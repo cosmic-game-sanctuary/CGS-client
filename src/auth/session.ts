@@ -1,5 +1,7 @@
 import { createContext, use } from 'react'
 import { faucet, getMe } from '@/api/me'
+import { ApiError } from '@/lib/api'
+import { HAS_TEST_FAUCET } from '@/lib/network'
 
 /**
  * Who you are, and what your wallet holds.
@@ -152,18 +154,42 @@ export function grantKey(gameId: string) {
  *
  * Real money moved by the server, not a number bumped locally. Nothing hands
  * out testnet USDC to an arbitrary address, so without this a fresh test buyer
- * could never buy anything. Development only, and the route is not even mounted
- * unless the server was started with DEV_FAUCET=on.
- * TODO(integration): Privy's own funding UI replaces this before any deploy.
+ * could never buy anything. Testnet builds only (`HAS_TEST_FAUCET`), and the
+ * route is not even mounted unless the server was started with DEV_FAUCET=on.
+ *
+ * On mainnet the way in is sending USDC to the wallet's address, which every
+ * funding screen shows. TODO(integration): a card purchase goes beside it.
+ * MoonPay delivers USDC on Arc, but Privy's `useFundWallet` cannot route to it
+ * yet: as of `@privy-io/js-sdk-core` 0.78.3 its MoonPay mapping has no Arc
+ * entry and falls back to *Ethereum mainnet* with only a console warning, so a
+ * card purchase through it would land on the wrong chain.
  */
 export async function fund(amountUsd?: number): Promise<void> {
+  if (!HAS_TEST_FAUCET) {
+    throw new Error('There is no faucet on mainnet. Send USDC to your wallet address.')
+  }
+
   // What the wallet held before, so there is something to compare against.
   // Cheap, and the alternative is guessing when the money has landed.
   const before = await getMe()
     .then((me) => me.balanceUnits)
     .catch(() => null)
 
-  await faucet(amountUsd === undefined ? {} : { amount: amountUsd })
+  try {
+    await faucet(amountUsd === undefined ? {} : { amount: amountUsd })
+  } catch (error) {
+    // The route is not mounted unless the server was started with
+    // DEV_FAUCET=on, so a 404 is a configuration answer rather than a failure.
+    // "No route for POST /api/dev/faucet" is the wrong sentence for someone who
+    // just wants funds, and every screen with this button shows the address.
+    if (error instanceof ApiError && error.status === 404) {
+      throw new Error(
+        'The test faucet is off. Send USDC to the address below instead.',
+        { cause: error },
+      )
+    }
+    throw error
+  }
 
   // The transfer reached consensus before the faucet responded, but `/api/me`
   // reads the balance from the Mirror Node and the mirror is a beat or two

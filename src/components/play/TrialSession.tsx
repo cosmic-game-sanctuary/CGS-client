@@ -235,8 +235,8 @@ function TrialGate({
     setBusy(true)
     setProblem(null)
     try {
-      // TODO(integration): Privy's own funding UI replaces the dev faucet
-      // before any deploy. Same call site either way.
+      // Testnet's faucet. On mainnet `FundingBody` draws no button, and a
+      // card onramp would land here: see the TODO on `fund()`.
       await fund(amount)
     } catch (error) {
       setProblem(errorMessage(error))

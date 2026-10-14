@@ -1,10 +1,12 @@
-import { Check, ChevronDown, Copy, Plus } from 'lucide-react'
+import { ChevronDown, Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { DepositAddress } from '@/components/money/DepositAddress'
 import { Button } from '@/components/ui/Button'
-import { formatPrice, truncateAddress } from '@/lib/format'
+import { formatPrice } from '@/lib/format'
 import { cn } from '@/lib/utils'
-import { ApiError, errorMessage } from '@/lib/api'
+import { errorMessage } from '@/lib/api'
+import { ARC_NETWORK_NAME, HAS_TEST_FAUCET } from '@/lib/network'
 import { fund, signIn, signOut, useSession } from '@/auth/session'
 
 /**
@@ -33,9 +35,11 @@ import { fund, signIn, signOut, useSession } from '@/auth/session'
  *   and need somewhere to stand.
  *
  * The deposit address is the only funding route that always works. The faucet
- * button beside it moves funds out of the operator account and only exists
- * when the server was started with `DEV_FAUCET=on`, so it is a convenience for
- * whoever is running this locally, never the answer for a real wallet.
+ * button beside it moves funds out of the operator account, so it is drawn on
+ * testnet builds only and answers only when the server was started with
+ * `DEV_FAUCET=on`: a convenience for whoever is testing, never the answer for
+ * a real wallet. On mainnet the address is the whole of "Add funds" until a
+ * card onramp exists.
  */
 export function ProfileMenu() {
   const session = useSession()
@@ -82,16 +86,9 @@ export function ProfileMenu() {
     try {
       await fund()
     } catch (error) {
-      // The faucet route is not mounted unless the server was started with
-      // DEV_FAUCET=on, so a 404 here is a configuration answer rather than a
-      // failure. Saying "no route for POST /api/dev/faucet" to someone who
-      // just wants funds is the wrong sentence, and the address below is the
-      // right one either way.
-      setFundError(
-        error instanceof ApiError && error.status === 404
-          ? 'The test faucet is off. Send funds to the address below instead.'
-          : errorMessage(error),
-      )
+      // `fund()` already turns a faucet that is switched off into a sentence
+      // pointing at the address below.
+      setFundError(errorMessage(error))
     } finally {
       setFunding(false)
     }
@@ -154,15 +151,17 @@ export function ProfileMenu() {
               >
                 {session.error ? '—' : formatPrice(session.balanceUsd)}
               </span>
-              <button
-                type="button"
-                onClick={addFunds}
-                disabled={funding}
-                className="flex cursor-pointer items-center gap-1 rounded-chip border-2 border-ink bg-paper px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-transform duration-130 hover:-translate-y-px active:translate-y-px disabled:cursor-default disabled:opacity-50 disabled:hover:translate-y-0"
-              >
-                <Plus size={11} strokeWidth={3.5} />
-                {funding ? 'Adding…' : 'Add funds'}
-              </button>
+              {HAS_TEST_FAUCET ? (
+                <button
+                  type="button"
+                  onClick={addFunds}
+                  disabled={funding}
+                  className="flex cursor-pointer items-center gap-1 rounded-chip border-2 border-ink bg-paper px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-transform duration-130 hover:-translate-y-px active:translate-y-px disabled:cursor-default disabled:opacity-50 disabled:hover:translate-y-0"
+                >
+                  <Plus size={11} strokeWidth={3.5} />
+                  {funding ? 'Adding…' : 'Add funds'}
+                </button>
+              ) : null}
             </div>
             {/* A transfer plus the balance re-read behind it, which is a beat
                 slower than the button press suggests. */}
@@ -191,7 +190,15 @@ export function ProfileMenu() {
             ) : null}
 
             {session.address ? (
-              <DepositAddress address={session.address} />
+              <div className="mt-3 border-t-2 border-dashed border-ink-faint pt-2.5">
+                <DepositAddress
+                  address={session.address}
+                  label={
+                    HAS_TEST_FAUCET ? 'Or send from another wallet' : 'Add funds'
+                  }
+                  note={`Send USDC on ${ARC_NETWORK_NAME} here. Nothing else is needed, not even gas.`}
+                />
+              </div>
             ) : null}
           </div>
 
@@ -237,70 +244,6 @@ export function ProfileMenu() {
           </div>
         </div>
       ) : null}
-    </div>
-  )
-}
-
-/**
- * Where to send funds from a wallet you already have.
- *
- * This is the path that does not spend anything of ours. A Privy embedded
- * wallet is an ordinary EVM address, so any wallet can send straight to it and
- * a person with their own testnet funds never needs the faucet.
- *
- * **There is no second asset and no account to open.** On Arc, USDC *is* the
- * gas token and an address is just an address, so one transfer of one asset is
- * the whole of getting started. This used to explain the Hedera account that
- * came into existence on the first transfer, and the HBAR you nonetheless did
- * not need; neither exists any more.
- */
-function DepositAddress({ address }: { address: string }) {
-  const [copied, setCopied] = useState(false)
-
-  useEffect(() => {
-    if (!copied) return
-    const timer = setTimeout(() => setCopied(false), 1600)
-    return () => clearTimeout(timer)
-  }, [copied])
-
-  async function copy() {
-    try {
-      await navigator.clipboard.writeText(address)
-      setCopied(true)
-    } catch {
-      // Clipboard access can be refused outright, and a silent no-op reads as
-      // a broken button. Selecting the text is the fallback everyone knows.
-      setCopied(false)
-    }
-  }
-
-  return (
-    <div className="mt-3 border-t-2 border-dashed border-ink-faint pt-2.5">
-      <span className="label-micro text-ink-soft">Or send from another wallet</span>
-      <div className="mt-1.5 flex items-center gap-1.5">
-        <code
-          title={address}
-          className="min-w-0 flex-1 truncate rounded-md border-2 border-ink bg-paper px-2 py-1 font-mono text-[11px]"
-        >
-          {truncateAddress(address, 10, 6)}
-        </code>
-        <button
-          type="button"
-          onClick={copy}
-          aria-label="Copy your wallet address"
-          className="flex shrink-0 cursor-pointer items-center gap-1 rounded-chip border-2 border-ink bg-paper px-2 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-transform duration-130 hover:-translate-y-px active:translate-y-px"
-        >
-          {copied ? (
-            <Check size={11} strokeWidth={3.5} className="text-green" />
-          ) : (
-            <Copy size={11} strokeWidth={3} />
-          )}
-          {copied ? 'Copied' : 'Copy'}
-        </button>
-      </div>
-      <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-ink-soft">
-        Send USDC here. Nothing else is needed, not even gas.
-      </p>
     </div>
   )
 }

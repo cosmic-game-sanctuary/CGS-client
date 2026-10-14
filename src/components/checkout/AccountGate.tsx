@@ -1,10 +1,13 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { Freehand } from '@/components/icons/Freehand'
+import { DepositAddress } from '@/components/money/DepositAddress'
 import { Button } from '@/components/ui/Button'
 import { PriceChip } from '@/components/ui/PriceChip'
 import { formatPrice } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { suggestedTopUp } from '@/lib/gate'
+import { ARC_NETWORK_NAME, HAS_TEST_FAUCET } from '@/lib/network'
+import { refreshSession, useSession } from '@/auth/session'
 
 /**
  * The two steps before any money can move: having an account, and having
@@ -38,7 +41,7 @@ export function GateShell({
 }: {
   /** The dialog's accessible name. */
   title: string
-  /** The `Step 1 of 3` line, left of the price. */
+  /** The rung's name, left of the price. Named, never numbered. */
   step: string
   priceUsd: number
   hidden?: boolean
@@ -141,6 +144,13 @@ export function SignInBody({
  * `lines` is whatever the caller wants itemised above the button. Checkout
  * shows the game and any trial credit; the trial shows one chunk and the
  * ceiling it can never pass.
+ *
+ * **Two shapes, by network.** Testnet has the dev faucet as its button and the
+ * address as a second way in. Mainnet has no faucet and, until a card onramp
+ * exists, no button: the address *is* the step, so it is printed in full. This
+ * used to promise "card or bank, handled by our payments partner" above a
+ * button that could only ever reach the faucet, which on mainnet does not
+ * exist.
  */
 export function FundingBody({
   shortfallUsd,
@@ -150,10 +160,26 @@ export function FundingBody({
 }: {
   shortfallUsd: number
   lines: { label: string; value: string; tone?: 'green' }[]
+  /** Testnet only: the faucet is running. */
   busy: boolean
+  /** Testnet only: never called on mainnet, where there is no faucet. */
   onFund: (amount: number) => void
 }) {
+  const { address } = useSession()
   const topUp = suggestedTopUp(shortfallUsd)
+  // Up to the cent, never down. Sending the rounded-down figure would land
+  // someone a fraction short, back on this same screen.
+  const atLeastUsd = Math.ceil(shortfallUsd * 100) / 100
+
+  // Money sent from another wallet arrives without this page hearing about it.
+  // The rung is derived from the session's balance, so re-reading that is all
+  // it takes for the step to move on by itself. Paused while the tab is hidden.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshSession()
+    }, BALANCE_POLL_MS)
+    return () => clearInterval(timer)
+  }, [])
 
   return (
     <>
@@ -161,8 +187,17 @@ export function FundingBody({
         <div>
           <h2 className="text-2xl">Add funds</h2>
           <p className="mt-2 font-body text-sm leading-relaxed text-ink-soft">
-            Your wallet is {formatPrice(shortfallUsd)} short. Top it up once and
-            the rest of your buys are one tap.
+            {HAS_TEST_FAUCET ? (
+              <>
+                Your wallet is {formatPrice(shortfallUsd)} short. Top it up once
+                and the rest of your buys are one tap.
+              </>
+            ) : (
+              <>
+                Send at least {formatPrice(atLeastUsd)} in USDC to your wallet.
+                This carries on by itself once it lands.
+              </>
+            )}
           </p>
         </div>
         <Freehand
@@ -188,21 +223,53 @@ export function FundingBody({
         ))}
       </dl>
 
-      <Button
-        variant="go"
-        size="lg"
-        className="mt-4 w-full"
-        disabled={busy}
-        onClick={() => onFund(topUp)}
-      >
-        {busy ? 'Adding…' : `Add ${formatPrice(topUp)}`}
-      </Button>
-      <p className="mt-3 font-mono text-[11px] text-ink-soft">
-        Card or bank, handled by our payments partner.
-      </p>
+      {HAS_TEST_FAUCET ? (
+        <>
+          <Button
+            variant="go"
+            size="lg"
+            className="mt-4 w-full"
+            disabled={busy}
+            onClick={() => onFund(topUp)}
+          >
+            {busy ? 'Adding…' : `Add ${formatPrice(topUp)}`}
+          </Button>
+          <p className="mt-3 font-mono text-[11px] text-ink-soft">
+            Test money, from our faucet.
+          </p>
+        </>
+      ) : null}
+
+      {address ? (
+        <div
+          className={cn(
+            'mt-4',
+            HAS_TEST_FAUCET && 'border-t-2 border-dashed border-ink-faint pt-3',
+          )}
+        >
+          <DepositAddress
+            address={address}
+            full
+            label={HAS_TEST_FAUCET ? 'Or send from another wallet' : 'Your wallet'}
+            note={`USDC on ${ARC_NETWORK_NAME} only. Sent on any other network, it will not arrive here.`}
+          />
+        </div>
+      ) : null}
+
+      {HAS_TEST_FAUCET ? null : (
+        <p
+          aria-live="polite"
+          className="mt-3 font-mono text-[11px] text-ink-soft"
+        >
+          Waiting for it to arrive.
+        </p>
+      )}
     </>
   )
 }
+
+/** Often enough to feel immediate, rare enough not to matter to the server. */
+const BALANCE_POLL_MS = 5000
 
 /**
  * Step three, and the trial's alone.
