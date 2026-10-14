@@ -163,6 +163,12 @@ export function Money() {
                         current.report.totals.games === 1 ? 'game' : 'games'
                       }, ${current.report.totals.sales} ${
                         current.report.totals.sales === 1 ? 'sale' : 'sales'
+                      }${
+                        (current.report.totals.pending?.units ?? 0) > 0
+                          ? `. ${formatAmount(
+                              current.report.totals.pending!.display,
+                            )} of it is on its way to the vaults`
+                          : ''
                       }`
                     : 'everything you are credited on'
                 }
@@ -295,6 +301,11 @@ function Report({
                   <span className="tnum block font-mono text-[15px] font-bold text-green">
                     {formatAmount(game.yours?.earned.display ?? 0)}
                   </span>
+                  {(game.yours?.pending?.units ?? 0) > 0 ? (
+                    <span className="tnum block font-mono text-[10px] text-ink-soft">
+                      {formatAmount(game.yours!.pending!.display)} on its way
+                    </span>
+                  ) : null}
                 </span>
               </li>
             ))}

@@ -33,7 +33,17 @@ export interface WireEarningsGame {
   /** What buyers paid, before it was divided. */
   gross: WireMoney
   /** Your cut of that gross. Personal report only. */
-  yours?: { pct: number; role: string; earned: WireMoney }
+  yours?: {
+    pct: number
+    role: string
+    earned: WireMoney
+    /**
+     * Part of `earned` that is not in the vault yet: trial chunks Circle has
+     * credited and the server has not forwarded. Optional so an older server
+     * still parses. It reaches the vault, and becomes claimable, on its own.
+     */
+    pending?: WireMoney
+  }
   plays: number
   likes: number
   reviews: number
@@ -80,6 +90,8 @@ export interface WirePersonalEarnings {
     games: number
     /** Sitting in vaults with your name on it. Claim it to move it. */
     claimable: WireMoney
+    /** Earned, but still on its way to a vault. Not claimable yet. */
+    pending?: WireMoney
     /** Already withdrawn from the vaults. */
     claimed: WireMoney
     asset: string
